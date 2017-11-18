@@ -1,6 +1,5 @@
 
-pub struct ClientSession
-{
+pub struct ClientSession {
 
 }
 
