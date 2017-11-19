@@ -39,7 +39,7 @@ impl<'a> ReadBufferCursor<'a> {
   /// Parses a variable sized string from the buffer by reading a u16 length
   /// descriptor(little endian) then the string itself.
   pub fn parse_var_string(&mut self) -> Result<String, String> {
-    match parse_var_string(&self.bytes) {
+    match parse_var_string(&self.bytes[self.index..self.bytes.len()]) {
       Ok(T) => {
         self.index += T.len() + 2;
         Ok(T)
@@ -56,6 +56,22 @@ impl<'a> ReadBufferCursor<'a> {
       Ok(T) => Ok(T.to_string()),
       Err(_) => Err(String::from("Failed to parse string."))
     }
+  }
+
+  /// Get number of bytes remaining after cursor position.
+  pub fn bytes_remaining(&self) -> usize {
+    self.bytes.len() - self.index
+  }
+
+  /// Get the next single byte.
+  pub fn get_byte(&mut self) -> Result<u8, String> {
+    if self.bytes_remaining() == 0 {
+      return Err(String::from("No byte remaining."))
+    }
+
+    self.index += 1;
+
+    Ok(self.bytes[self.index - 1])
   }
 }
 
