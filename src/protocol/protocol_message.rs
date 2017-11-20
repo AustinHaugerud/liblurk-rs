@@ -1,4 +1,5 @@
 use super::primitive_parse::*;
+use super::primitive_break::OutputBuffer;
 use ::util::ResultLinkChecker;
 use ::util::ResultChainChecker;
 use ::util::BitField;
@@ -85,7 +86,15 @@ impl FromLurkMessageFrame<Message> for Message {
 impl ToLurkMessageFrame for Message {
   fn to_lurk_message_frame(&self) -> LurkMessageFrame
   {
-    LurkMessageFrame::new(1, vec![])
+    let mut builder = OutputBuffer::new();
+
+    builder
+      .write_u16l(self.message.len() as u16)
+      .write_string_fixed(&self.receiver, NAME_LENGTH)
+      .write_string_fixed(&self.sender, NAME_LENGTH)
+      .write_string_fixed(&self.message, self.message.len() as u16);
+
+    LurkMessageFrame::new(Message::message_type(), builder.data)
   }
 }
 
@@ -117,7 +126,11 @@ impl FromLurkMessageFrame<ChangeRoom> for ChangeRoom {
 impl ToLurkMessageFrame for ChangeRoom {
   fn to_lurk_message_frame(&self) -> LurkMessageFrame
   {
-    LurkMessageFrame::new(2, vec![])
+    let mut builder = OutputBuffer::new();
+
+    builder.write_u16l(self.room_number);
+
+    LurkMessageFrame::new(ChangeRoom::message_type(), builder.data)
   }
 }
 
@@ -134,7 +147,7 @@ pub struct Fight;
 impl ToLurkMessageFrame for Fight {
   fn to_lurk_message_frame(&self) -> LurkMessageFrame
   {
-    LurkMessageFrame::new(3, vec![])
+    return LurkMessageFrame::new(Fight::message_type(), vec![]);
   }
 }
 
@@ -166,7 +179,11 @@ impl FromLurkMessageFrame<PvpFight> for PvpFight {
 impl ToLurkMessageFrame for PvpFight {
   fn to_lurk_message_frame(&self) -> LurkMessageFrame
   {
-    LurkMessageFrame::new(4, vec![])
+    let mut builder = OutputBuffer::new();
+
+    builder.write_string_fixed(&self.target, NAME_LENGTH);
+
+    LurkMessageFrame::new(PvpFight::message_type(), builder.data)
   }
 }
 
@@ -198,7 +215,11 @@ impl FromLurkMessageFrame<Loot> for Loot {
 impl ToLurkMessageFrame for Loot {
   fn to_lurk_message_frame(&self) -> LurkMessageFrame
   {
-    LurkMessageFrame::new(5, vec![])
+    let mut builder = OutputBuffer::new();
+
+    builder.write_string_fixed(&self.target, NAME_LENGTH);
+
+    LurkMessageFrame::new(Loot::message_type(), builder.data)
   }
 }
 
@@ -215,7 +236,7 @@ pub struct Start;
 impl ToLurkMessageFrame for Start {
   fn to_lurk_message_frame(&self) -> LurkMessageFrame
   {
-    LurkMessageFrame::new(6, vec![])
+    LurkMessageFrame::new(Start::message_type(), vec![])
   }
 }
 
@@ -254,7 +275,11 @@ impl FromLurkMessageFrame<Error> for Error {
 impl ToLurkMessageFrame for Error {
   fn to_lurk_message_frame(&self) -> LurkMessageFrame
   {
-    LurkMessageFrame::new(7, vec![])
+    let mut builder = OutputBuffer::new();
+
+    builder.write_byte(self.error_code).write_string(&self.error_message);
+
+    LurkMessageFrame::new(Error::message_type(), builder.data)
   }
 }
 
@@ -286,7 +311,11 @@ impl FromLurkMessageFrame<Accept> for Accept {
 impl ToLurkMessageFrame for Accept {
   fn to_lurk_message_frame(&self) -> LurkMessageFrame
   {
-    LurkMessageFrame::new(8, vec![])
+    let mut builder = OutputBuffer::new();
+
+    builder.write_byte(self.action_type);
+
+    LurkMessageFrame::new(Accept::message_type(), builder.data)
   }
 }
 
@@ -329,7 +358,14 @@ impl FromLurkMessageFrame<Room> for Room {
 impl ToLurkMessageFrame for Room {
   fn to_lurk_message_frame(&self) -> LurkMessageFrame
   {
-    LurkMessageFrame::new(9, vec![])
+    let mut builder = OutputBuffer::new();
+
+    builder
+      .write_u16l(self.room_number)
+      .write_string_fixed(&self.room_name, NAME_LENGTH)
+      .write_string(&self.room_description);
+
+    LurkMessageFrame::new(Room::message_type(), builder.data)
   }
 }
 
@@ -413,7 +449,28 @@ impl FromLurkMessageFrame<Character> for Character {
 impl ToLurkMessageFrame for Character {
   fn to_lurk_message_frame(&self) -> LurkMessageFrame
   {
-    LurkMessageFrame::new(10, vec![])
+    let mut bit_field = BitField { field : 0 };
+
+    bit_field.configure(7, self.is_alive);
+    bit_field.configure(6, self.join_battles);
+    bit_field.configure(5, self.is_monster);
+    bit_field.configure(4, self.is_started);
+    bit_field.configure(3, self.is_ready);
+
+    let mut builder = OutputBuffer::new();
+
+    builder
+      .write_string_fixed(&self.player_name, NAME_LENGTH)
+      .write_byte(bit_field.field)
+      .write_u16l(self.attack)
+      .write_u16l(self.defense)
+      .write_u16l(self.regeneration)
+      .write_i16l(self.health)
+      .write_u16l(self.gold)
+      .write_u16l(self.current_room_number)
+      .write_string(&self.description);
+
+    LurkMessageFrame::new(Character::message_type(), builder.data)
   }
 }
 
@@ -462,7 +519,14 @@ impl FromLurkMessageFrame<Game> for Game {
 impl ToLurkMessageFrame for Game {
   fn to_lurk_message_frame(&self) -> LurkMessageFrame
   {
-    LurkMessageFrame::new(11, vec![])
+    let mut builder = OutputBuffer::new();
+
+    builder
+      .write_u16l(self.initial_points)
+      .write_u16l(self.stat_limit)
+      .write_string(&self.description);
+
+    LurkMessageFrame::new(Game::message_type(), builder.data)
   }
 }
 
@@ -528,7 +592,14 @@ impl FromLurkMessageFrame<Connection> for Connection {
 impl ToLurkMessageFrame for Connection {
   fn to_lurk_message_frame(&self) -> LurkMessageFrame
   {
-    LurkMessageFrame::new(13, vec![])
+    let mut builder = OutputBuffer::new();
+
+    builder
+      .write_u16l(self.room_number)
+      .write_string_fixed(&self.room_name, NAME_LENGTH)
+      .write_string(&self.room_description);
+
+    LurkMessageFrame::new(Connection::message_type(), builder.data)
   }
 }
 
@@ -583,6 +654,40 @@ mod tests {
 
   #[test]
   fn test_message_write() {
+    let message = Message {
+      message: String::from("mess"),
+      sender: String::from("send"),
+      receiver: String::from("reci"),
+    };
+
+    let data = message.to_lurk_message_frame();
+
+    let expectation = [
+      0x04, 0x00,
+
+      'r' as u8, 'e' as u8, 'c' as u8, 'i' as u8,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+
+      's' as u8, 'e' as u8, 'n' as u8, 'd' as u8,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+
+      'm' as u8, 'e' as u8, 's' as u8, 's' as u8
+    ];
+
+    assert_eq!(data.message_type, Message::message_type());
+    assert_eq!(data.message_data, expectation.to_vec());
   }
   /////////////////////////////////////////////////////////////////////////////////////////////////
   #[test]
@@ -598,12 +703,28 @@ mod tests {
 
   #[test]
   fn test_changeroom_write() {
+    let change_room = ChangeRoom {
+      room_number: 8,
+    };
 
+    let data = change_room.to_lurk_message_frame();
+
+    let expectation = [
+      0x08_u8, 0x00_u8
+    ];
+
+    assert_eq!(data.message_type, ChangeRoom::message_type());
+    assert_eq!(data.message_data, expectation);
   }
   /////////////////////////////////////////////////////////////////////////////////////////////////
   #[test]
   fn test_fight_write() {
+    let fight = Fight {};
 
+    let message_frame = fight.to_lurk_message_frame();
+
+    assert_eq!(message_frame.message_type, Fight::message_type());
+    assert_eq!(message_frame.message_data, vec![]);
   }
   /////////////////////////////////////////////////////////////////////////////////////////////////
   #[test]
@@ -629,6 +750,26 @@ mod tests {
 
   #[test]
   fn test_pvpfight_write() {
+    let pvpfight = PvpFight {
+      target: String::from("targ"),
+    };
+
+    let message_frame = pvpfight.to_lurk_message_frame();
+
+    let expectation = vec![
+      't' as u8, 'a' as u8, 'r' as u8, 'g' as u8,
+
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+    ];
+
+    assert_eq!(message_frame.message_type, PvpFight::message_type());
+    assert_eq!(message_frame.message_data, expectation);
   }
   ////////////////////////////////////////////////////////////////////////////////////////////////
   #[test]
@@ -655,11 +796,36 @@ mod tests {
   #[test]
   fn test_loot_write() {
 
+    let loot = Loot {
+      target: String::from("loot"),
+    };
+
+    let message_frame = loot.to_lurk_message_frame();
+
+    let expectation = vec![
+      'l' as u8, 'o' as u8, 'o' as u8, 't' as u8,
+
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+    ];
+
+    assert_eq!(message_frame.message_type, Loot::message_type());
+    assert_eq!(message_frame.message_data, expectation);
   }
   /////////////////////////////////////////////////////////////////////////////////////////////////
   #[test]
   fn test_start_write() {
+    let start = Start {};
 
+    let message_frame = start.to_lurk_message_frame();
+
+    assert_eq!(message_frame.message_type, Start::message_type());
+    assert_eq!(message_frame.message_data, vec![]);
   }
   /////////////////////////////////////////////////////////////////////////////////////////////////
   #[test]
@@ -680,7 +846,21 @@ mod tests {
 
   #[test]
   fn test_error_write() {
+    let error = Error {
+      error_code: 6,
+      error_message: String::from("cat"),
+    };
 
+    let message_frame = error.to_lurk_message_frame();
+
+    let expectation = vec![
+      0x06,
+      0x03, 0x00,
+      'c' as u8, 'a' as u8, 't' as u8
+    ];
+
+    assert_eq!(message_frame.message_type, Error::message_type());
+    assert_eq!(message_frame.message_data, expectation);
   }
   /////////////////////////////////////////////////////////////////////////////////////////////////
   #[test]
@@ -696,7 +876,16 @@ mod tests {
 
   #[test]
   fn test_accept_write() {
+    let accept = Accept {
+      action_type: 5,
+    };
 
+    let message_frame = accept.to_lurk_message_frame();
+
+    let expectation = vec![0x05 as u8];
+
+    assert_eq!(message_frame.message_type, Accept::message_type());
+    assert_eq!(message_frame.message_data, expectation);
   }
   /////////////////////////////////////////////////////////////////////////////////////////////////
   #[test]
@@ -728,7 +917,32 @@ mod tests {
 
   #[test]
   fn test_room_write() {
+    let room = Room {
+      room_number: 8,
+      room_name: String::from("room"),
+      room_description: String::from("hell"),
+    };
 
+    let message_frame = room.to_lurk_message_frame();
+
+    let expectation = vec![
+      0x08, 0x00,
+
+      'r' as u8, 'o' as u8, 'o' as u8, 'm' as u8,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+
+      0x04, 0x00,
+      'h' as u8, 'e' as u8, 'l' as u8, 'l' as u8
+    ];
+
+    assert_eq!(message_frame.message_type, Room::message_type());
+    assert_eq!(message_frame.message_data, expectation);
   }
   /////////////////////////////////////////////////////////////////////////////////////////////////
   #[test]
@@ -774,7 +988,46 @@ mod tests {
 
   #[test]
   fn test_character_write() {
+    let character = Character {
+      player_name: String::from("play"),
+      is_alive: true,
+      join_battles: false,
+      is_monster: true,
+      is_started: false,
+      is_ready: true,
+      attack: 0x00_F0,
+      defense: 0x00_0F,
+      regeneration: 0x00_AA,
+      health: 0x00_FF,
+      gold: 0x00_FF,
+      current_room_number: 0x00_03,
+      description: String::from("hell"),
+    };
 
+    let message_frame = character.to_lurk_message_frame();
+
+    let expectation = vec![
+
+      'p' as u8, 'l' as u8, 'a' as u8, 'y' as u8, 0x00, 0x00, 0x00, 0x00, // name
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+
+      0b10101000, // flags
+
+      0xF0, 0x00, // attack
+      0x0F, 0x00, // def
+      0xAA, 0x00, // regen
+      0xFF, 0x00, // health
+      0xFF, 0x00, // gold
+      0x03, 0x00, // room number
+
+      0x04, 0x00, // description
+      'h' as u8, 'e' as u8, 'l' as u8, 'l' as u8
+    ];
+
+    assert_eq!(message_frame.message_type, Character::message_type());
+    assert_eq!(message_frame.message_data, expectation);
   }
   /////////////////////////////////////////////////////////////////////////////////////////////////
   #[test]
@@ -798,7 +1051,24 @@ mod tests {
 
   #[test]
   fn test_game_write() {
+    let game = Game {
+      initial_points: 0xFF_00,
+      stat_limit: 0x00_FF,
+      description: String::from("game"),
+    };
 
+    let message_frame = game.to_lurk_message_frame();
+
+    let expectation = vec![
+      0x00, 0xFF, // init points
+      0xFF, 0x00, // stat limit
+
+      0x04, 0x00,
+      'g' as u8, 'a' as u8, 'm' as u8, 'e' as u8
+    ];
+
+    assert_eq!(message_frame.message_type, Game::message_type());
+    assert_eq!(message_frame.message_data, expectation);
   }
   /////////////////////////////////////////////////////////////////////////////////////////////////
   #[test]
@@ -831,7 +1101,28 @@ mod tests {
 
   #[test]
   fn test_connection_write() {
+    let connection = Connection {
+      room_number: 3,
+      room_name: String::from("room"),
+      room_description: String::from("hell"),
+    };
 
+    let message_frame = connection.to_lurk_message_frame();
+
+    let expectation = vec![
+      0x03, 0x00, // room number
+
+      'r' as u8, 'o' as u8, 'o' as u8, 'm' as u8, 0x00, 0x00, 0x00, 0x00, // name
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+
+      0x04, 0x00, // description
+      'h' as u8, 'e' as u8, 'l' as u8, 'l' as u8
+    ];
+
+    assert_eq!(message_frame.message_type, Connection::message_type());
+    assert_eq!(message_frame.message_data, expectation);
   }
   /////////////////////////////////////////////////////////////////////////////////////////////////
 }

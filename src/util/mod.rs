@@ -50,5 +50,13 @@ impl BitField {
   pub fn clear(&mut self, index : u8) {
     self.field &= !(1 << index)
   }
+
+  pub fn configure(&mut self, index : u8, status : bool) {
+    if status {
+      self.set(index);
+    } else {
+      self.clear(index);
+    }
+  }
 }
 //////////////////////////////////////////////////////////////////////////////////////
