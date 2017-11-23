@@ -4,8 +4,23 @@ use ::util::ResultLinkChecker;
 use ::util::ResultChainChecker;
 use ::util::BitField;
 
-const NAME_LENGTH : u16 = 32;
+pub const NAME_LENGTH : u16 = 32;
 
+pub const MESSAGE_TYPE     : u8 = 1;
+pub const CHANGE_ROOM_TYPE : u8 = 2;
+pub const FIGHT_TYPE       : u8 = 3;
+pub const PVP_FIGHT_TYPE   : u8 = 4;
+pub const LOOT_TYPE        : u8 = 5;
+pub const START_TYPE       : u8 = 6;
+pub const ERROR_TYPE       : u8 = 7;
+pub const ACCEPT_TYPE      : u8 = 8;
+pub const ROOM_TYPE        : u8 = 9;
+pub const CHARACTER_TYPE   : u8 = 10;
+pub const GAME_TYPE        : u8 = 11;
+pub const LEAVE_TYPE       : u8 = 12;
+pub const CONNECTION_TYPE  : u8 = 13;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LurkMessageFrame
 {
   message_type: u8,
@@ -101,7 +116,7 @@ impl ToLurkMessageFrame for Message {
 impl LurkMessageType for Message {
   fn message_type() -> u8
   {
-    1
+    MESSAGE_TYPE
   }
 }
 
@@ -137,7 +152,7 @@ impl ToLurkMessageFrame for ChangeRoom {
 impl LurkMessageType for ChangeRoom {
   fn message_type() -> u8
   {
-    2
+    CHANGE_ROOM_TYPE
   }
 }
 
@@ -154,7 +169,7 @@ impl ToLurkMessageFrame for Fight {
 impl LurkMessageType for Fight {
   fn message_type() -> u8
   {
-    3
+    FIGHT_TYPE
   }
 }
 
@@ -190,7 +205,7 @@ impl ToLurkMessageFrame for PvpFight {
 impl LurkMessageType for PvpFight {
   fn message_type() -> u8
   {
-    4
+    PVP_FIGHT_TYPE
   }
 }
 
@@ -226,7 +241,7 @@ impl ToLurkMessageFrame for Loot {
 impl LurkMessageType for Loot {
   fn message_type() -> u8
   {
-    5
+    LOOT_TYPE
   }
 }
 
@@ -243,7 +258,7 @@ impl ToLurkMessageFrame for Start {
 impl LurkMessageType for Start {
   fn message_type() -> u8
   {
-    6
+    START_TYPE
   }
 }
 
@@ -286,7 +301,7 @@ impl ToLurkMessageFrame for Error {
 impl LurkMessageType for Error {
   fn message_type() -> u8
   {
-    7
+    ERROR_TYPE
   }
 }
 
@@ -322,7 +337,7 @@ impl ToLurkMessageFrame for Accept {
 impl LurkMessageType for Accept {
   fn message_type() -> u8
   {
-    8
+    ACCEPT_TYPE
   }
 }
 
@@ -372,7 +387,7 @@ impl ToLurkMessageFrame for Room {
 impl LurkMessageType for Room {
   fn message_type() -> u8
   {
-    9
+    ROOM_TYPE
   }
 }
 
@@ -477,7 +492,7 @@ impl ToLurkMessageFrame for Character {
 impl LurkMessageType for Character {
   fn message_type() -> u8
   {
-    10
+    CHARACTER_TYPE
   }
 }
 
@@ -533,7 +548,7 @@ impl ToLurkMessageFrame for Game {
 impl LurkMessageType for Game {
   fn message_type() -> u8
   {
-    11
+    GAME_TYPE
   }
 }
 
@@ -550,7 +565,7 @@ impl ToLurkMessageFrame for Leave {
 impl LurkMessageType for Leave {
   fn message_type() -> u8
   {
-    12
+    LEAVE_TYPE
   }
 }
 
@@ -606,7 +621,7 @@ impl ToLurkMessageFrame for Connection {
 impl LurkMessageType for Connection {
   fn message_type() -> u8
   {
-    13
+    CONNECTION_TYPE
   }
 }
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -620,7 +635,7 @@ mod tests {
   #[test]
   fn test_message_read() {
     let data = vec![
-      0x05, 0x00, // Message len
+      0x05, 0x00, // MESSAGE len
 
       'r' as u8, 'e' as u8, 'c' as u8, 'i' as u8, // Recipient
       0x00,0x00,0x00,0x00,
@@ -640,7 +655,7 @@ mod tests {
       0x00,0x00,0x00,0x00,
       0x00,0x00,0x00,0x00,
 
-      'h' as u8, 'e' as u8, 'l' as u8, 'l' as u8, 'o' as u8 // Message
+      'h' as u8, 'e' as u8, 'l' as u8, 'l' as u8, 'o' as u8 // MESSAGE
     ];
 
     let message_frame = LurkMessageFrame::new(Message::message_type(), data);
@@ -1073,7 +1088,14 @@ mod tests {
   /////////////////////////////////////////////////////////////////////////////////////////////////
   #[test]
   fn test_leave_write() {
+    let leave = Leave {};
 
+    let message_frame = leave.to_lurk_message_frame();
+
+    let expectation = vec![];
+
+    assert_eq!(message_frame.message_type, Leave::message_type());
+    assert_eq!(message_frame.message_data, expectation);
   }
   /////////////////////////////////////////////////////////////////////////////////////////////////
   #[test]

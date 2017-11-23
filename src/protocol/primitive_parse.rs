@@ -75,7 +75,7 @@ impl<'a> ReadBufferCursor<'a> {
   }
 }
 
-fn parse_u16l(bytes: &[u8]) -> u16
+pub fn parse_u16l(bytes: &[u8]) -> u16
 {
   (bytes[0] as u16 | ((bytes[1] as u16) << 8))
 }
