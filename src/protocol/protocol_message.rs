@@ -23,8 +23,8 @@ pub const CONNECTION_TYPE  : u8 = 13;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LurkMessageFrame
 {
-  message_type: u8,
-  message_data: Vec<u8>,
+  pub message_type: u8,
+  pub message_data: Vec<u8>,
 }
 
 impl LurkMessageFrame {

@@ -1,13 +1,5 @@
-pub mod protocol;
-pub mod client;
-pub mod server;
-pub mod io;
+mod protocol;
 mod util;
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-    }
-}
-
+mod client;
+mod server;

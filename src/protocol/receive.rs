@@ -1,5 +1,5 @@
 use super::protocol_message::LurkMessageFrame;
-use ::io::extractor::extract_message;
+use super::extractor::*;
 
 use std::io::Read;
 use std::borrow::Borrow;
@@ -21,6 +21,7 @@ pub struct EventReceiver {
 }
 
 impl EventDistributor for EventReceiver {
+
   fn distribute_event(&mut self, event: &LurkEvent) {
     let event_op = self.event_queue.pop();
 
@@ -36,6 +37,10 @@ impl EventDistributor for EventReceiver {
 }
 
 impl EventReceiver {
+  pub fn new() -> EventReceiver {
+    EventReceiver { handlers : vec![], event_queue : vec![] }
+  }
+
   pub fn bind_handler(&mut self, handler : fn(&LurkEvent)) {
     self.handlers.push(handler);
   }
