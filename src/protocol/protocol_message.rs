@@ -4,52 +4,66 @@ use ::util::ResultLinkChecker;
 use ::util::ResultChainChecker;
 use ::util::BitField;
 
-pub const NAME_LENGTH : u16 = 32;
+pub const NAME_LENGTH: u16 = 32;
 
-pub const MESSAGE_TYPE     : u8 = 1;
-pub const CHANGE_ROOM_TYPE : u8 = 2;
-pub const FIGHT_TYPE       : u8 = 3;
-pub const PVP_FIGHT_TYPE   : u8 = 4;
-pub const LOOT_TYPE        : u8 = 5;
-pub const START_TYPE       : u8 = 6;
-pub const ERROR_TYPE       : u8 = 7;
-pub const ACCEPT_TYPE      : u8 = 8;
-pub const ROOM_TYPE        : u8 = 9;
-pub const CHARACTER_TYPE   : u8 = 10;
-pub const GAME_TYPE        : u8 = 11;
-pub const LEAVE_TYPE       : u8 = 12;
-pub const CONNECTION_TYPE  : u8 = 13;
+pub const MESSAGE_TYPE: u8 = 1;
+pub const CHANGE_ROOM_TYPE: u8 = 2;
+pub const FIGHT_TYPE: u8 = 3;
+pub const PVP_FIGHT_TYPE: u8 = 4;
+pub const LOOT_TYPE: u8 = 5;
+pub const START_TYPE: u8 = 6;
+pub const ERROR_TYPE: u8 = 7;
+pub const ACCEPT_TYPE: u8 = 8;
+pub const ROOM_TYPE: u8 = 9;
+pub const CHARACTER_TYPE: u8 = 10;
+pub const GAME_TYPE: u8 = 11;
+pub const LEAVE_TYPE: u8 = 12;
+pub const CONNECTION_TYPE: u8 = 13;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct LurkMessageFrame
-{
-  message_type: u8,
-  message_data: Vec<u8>,
+#[derive(PartialEq, Debug)]
+pub enum LurkMessageKind {
+  Message,
+  ChangeRoom,
+  Fight,
+  PvPFight,
+  Loot,
+  Start,
+  Error,
+  Accept,
+  Room,
+  Character,
+  Game,
+  Leave,
+  Connection,
 }
 
-impl LurkMessageFrame {
-  pub fn parse<F>(&self) -> Result<F, String> where F: FromLurkMessageFrame<F> + LurkMessageType
-  {
-    F::from_lurk_message_frame(self)
-  }
-
-  pub fn from_message<F>(message: &F) -> LurkMessageFrame where F: ToLurkMessageFrame + LurkMessageType
-  {
-    message.to_lurk_message_frame()
-  }
-
-  pub fn new(type_code: u8, data: Vec<u8>) -> LurkMessageFrame
-  {
-    LurkMessageFrame { message_type: type_code, message_data: data }
+impl LurkMessageKind {
+  pub fn from_code(code : u8) -> Result<LurkMessageKind, ()> {
+    match code {
+      MESSAGE_TYPE     => Ok(LurkMessageKind::Message),
+      CHANGE_ROOM_TYPE => Ok(LurkMessageKind::ChangeRoom),
+      FIGHT_TYPE       => Ok(LurkMessageKind::Fight),
+      PVP_FIGHT_TYPE   => Ok(LurkMessageKind::PvPFight),
+      LOOT_TYPE        => Ok(LurkMessageKind::Loot),
+      START_TYPE       => Ok(LurkMessageKind::Start),
+      ERROR_TYPE       => Ok(LurkMessageKind::Error),
+      ACCEPT_TYPE      => Ok(LurkMessageKind::Accept),
+      ROOM_TYPE        => Ok(LurkMessageKind::Room),
+      CHARACTER_TYPE   => Ok(LurkMessageKind::Character),
+      GAME_TYPE        => Ok(LurkMessageKind::Game),
+      LEAVE_TYPE       => Ok(LurkMessageKind::Leave),
+      CONNECTION_TYPE  => Ok(LurkMessageKind::Connection),
+      _ => Err(())
+    }
   }
 }
 
-pub trait FromLurkMessageFrame<T> {
-  fn from_lurk_message_frame(lurk_message_frame: &LurkMessageFrame) -> Result<T, String> where T: LurkMessageType;
+pub trait LurkMessageParse<T> {
+  fn parse_lurk_message(message_data: &[u8]) -> Result<(T, usize), String> where T: LurkMessageType;
 }
 
-pub trait ToLurkMessageFrame {
-  fn to_lurk_message_frame(&self) -> LurkMessageFrame;
+pub trait LurkMessageBlobify {
+  fn produce_lurk_message_blob(&self) -> Vec<u8>;
 }
 
 pub trait LurkMessageType {
@@ -63,9 +77,9 @@ pub struct Message {
   receiver: String,
 }
 
-impl FromLurkMessageFrame<Message> for Message {
-  fn from_lurk_message_frame(lurk_message_frame: &LurkMessageFrame) -> Result<Message, String> {
-    let data = lurk_message_frame.message_data.as_slice();
+impl LurkMessageParse<Message> for Message {
+  fn parse_lurk_message(data: &[u8]) -> Result<(Message, usize), String> {
+    let mut bytes_read: usize = 0;
     let mut cursor = ReadBufferCursor::new(&data);
 
     let message_len = cursor.parse_u16l();
@@ -74,14 +88,15 @@ impl FromLurkMessageFrame<Message> for Message {
       return Err(String::from("Failed to parse message."));
     }
 
-
     let receiver = cursor.parse_string(NAME_LENGTH);
     let sender = cursor.parse_string(NAME_LENGTH);
+
+    bytes_read += NAME_LENGTH as usize * 2 + 2;
 
     let len = message_len.unwrap();
 
     if len as usize > cursor.bytes_remaining() {
-      return Err(String::from("Not enough bytes remaining for message."))
+      return Err(String::from("Not enough bytes remaining for message."));
     }
 
     let message = cursor.parse_string(len);
@@ -90,26 +105,29 @@ impl FromLurkMessageFrame<Message> for Message {
       return Err(String::from("Failed to parse message."));
     }
 
-    Ok(Message {
+    bytes_read += len as usize;
+
+    Ok((Message {
       message: message.unwrap().to_string(),
       sender: sender.unwrap().to_string(),
       receiver: receiver.unwrap().to_string(),
-    })
+    }, bytes_read))
   }
 }
 
-impl ToLurkMessageFrame for Message {
-  fn to_lurk_message_frame(&self) -> LurkMessageFrame
+impl LurkMessageBlobify for Message {
+  fn produce_lurk_message_blob(&self) -> Vec<u8>
   {
     let mut builder = OutputBuffer::new();
 
     builder
+      .write_byte(Message::message_type())
       .write_u16l(self.message.len() as u16)
       .write_string_fixed(&self.receiver, NAME_LENGTH)
       .write_string_fixed(&self.sender, NAME_LENGTH)
       .write_string_fixed(&self.message, self.message.len() as u16);
 
-    LurkMessageFrame::new(Message::message_type(), builder.data)
+    builder.data
   }
 }
 
@@ -125,27 +143,25 @@ pub struct ChangeRoom {
   room_number: u16,
 }
 
-impl FromLurkMessageFrame<ChangeRoom> for ChangeRoom {
-  fn from_lurk_message_frame(lurk_message_frame: &LurkMessageFrame) -> Result<ChangeRoom, String>
+impl LurkMessageParse<ChangeRoom> for ChangeRoom {
+  fn parse_lurk_message(data: &[u8]) -> Result<(ChangeRoom, usize), String>
   {
-    let data = lurk_message_frame.message_data.as_slice();
     let mut cursor = ReadBufferCursor::new(&data);
 
     match cursor.parse_u16l() {
-      Ok(T) => Ok(ChangeRoom{ room_number : T }),
-      Err(E) => Err(E)
+      Ok(t) => Ok((ChangeRoom { room_number: t }, 2)),
+      Err(e) => Err(e)
     }
   }
 }
 
-impl ToLurkMessageFrame for ChangeRoom {
-  fn to_lurk_message_frame(&self) -> LurkMessageFrame
+impl LurkMessageBlobify for ChangeRoom {
+  fn produce_lurk_message_blob(&self) -> Vec<u8>
   {
     let mut builder = OutputBuffer::new();
 
-    builder.write_u16l(self.room_number);
-
-    LurkMessageFrame::new(ChangeRoom::message_type(), builder.data)
+    builder.write_byte(ChangeRoom::message_type()).write_u16l(self.room_number);
+    builder.data
   }
 }
 
@@ -159,10 +175,18 @@ impl LurkMessageType for ChangeRoom {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 pub struct Fight;
 
-impl ToLurkMessageFrame for Fight {
-  fn to_lurk_message_frame(&self) -> LurkMessageFrame
+impl LurkMessageParse<Fight> for Fight {
+  fn parse_lurk_message(_ : &[u8]) -> Result<(Fight, usize), String>
   {
-    return LurkMessageFrame::new(Fight::message_type(), vec![]);
+    Ok((Fight {}, 0))
+  }
+}
+
+impl LurkMessageBlobify for Fight {
+  fn produce_lurk_message_blob(&self) -> Vec<u8> {
+    let mut builder = OutputBuffer::new();
+    builder.write_byte(Fight::message_type());
+    builder.data
   }
 }
 
@@ -178,27 +202,26 @@ pub struct PvpFight {
   target: String,
 }
 
-impl FromLurkMessageFrame<PvpFight> for PvpFight {
-  fn from_lurk_message_frame(lurk_message_frame: &LurkMessageFrame) -> Result<PvpFight, String>
+impl LurkMessageParse<PvpFight> for PvpFight {
+  fn parse_lurk_message(data: &[u8]) -> Result<(PvpFight, usize), String>
   {
-    let data = lurk_message_frame.message_data.as_slice();
     let mut cursor = ReadBufferCursor::new(&data);
 
     match cursor.parse_string(NAME_LENGTH) {
-      Ok(T) => Ok(PvpFight { target: T }),
-      Err(E) => Err(E)
+      Ok(t) => Ok((PvpFight { target: t }, NAME_LENGTH as usize)),
+      Err(e) => Err(e)
     }
   }
 }
 
-impl ToLurkMessageFrame for PvpFight {
-  fn to_lurk_message_frame(&self) -> LurkMessageFrame
+impl LurkMessageBlobify for PvpFight {
+  fn produce_lurk_message_blob(&self) -> Vec<u8>
   {
     let mut builder = OutputBuffer::new();
 
-    builder.write_string_fixed(&self.target, NAME_LENGTH);
+    builder.write_byte(PvpFight::message_type()).write_string_fixed(&self.target, NAME_LENGTH);
 
-    LurkMessageFrame::new(PvpFight::message_type(), builder.data)
+    builder.data
   }
 }
 
@@ -214,27 +237,26 @@ pub struct Loot {
   target: String,
 }
 
-impl FromLurkMessageFrame<Loot> for Loot {
-  fn from_lurk_message_frame(lurk_message_frame: &LurkMessageFrame) -> Result<Loot, String>
+impl LurkMessageParse<Loot> for Loot {
+  fn parse_lurk_message(data: &[u8]) -> Result<(Loot, usize), String>
   {
-    let data = lurk_message_frame.message_data.as_slice();
     let mut cursor = ReadBufferCursor::new(&data);
 
     match cursor.parse_string(NAME_LENGTH) {
-      Ok(T) => Ok(Loot { target : T }),
-      Err(E) => Err(E)
+      Ok(t) => Ok((Loot { target: t }, NAME_LENGTH as usize)),
+      Err(e) => Err(e)
     }
   }
 }
 
-impl ToLurkMessageFrame for Loot {
-  fn to_lurk_message_frame(&self) -> LurkMessageFrame
+impl LurkMessageBlobify for Loot {
+  fn produce_lurk_message_blob(&self) -> Vec<u8>
   {
     let mut builder = OutputBuffer::new();
 
-    builder.write_string_fixed(&self.target, NAME_LENGTH);
+    builder.write_byte(Loot::message_type()).write_string_fixed(&self.target, NAME_LENGTH);
 
-    LurkMessageFrame::new(Loot::message_type(), builder.data)
+    builder.data
   }
 }
 
@@ -248,10 +270,18 @@ impl LurkMessageType for Loot {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 pub struct Start;
 
-impl ToLurkMessageFrame for Start {
-  fn to_lurk_message_frame(&self) -> LurkMessageFrame
+impl LurkMessageParse<Start> for Start {
+  fn parse_lurk_message(_ : &[u8]) -> Result<(Start, usize), String> {
+    Ok((Start {}, 0))
+  }
+}
+
+impl LurkMessageBlobify for Start {
+  fn produce_lurk_message_blob(&self) -> Vec<u8>
   {
-    LurkMessageFrame::new(Start::message_type(), vec![])
+    let mut builder = OutputBuffer::new();
+    builder.write_byte(Start::message_type());
+    builder.data
   }
 }
 
@@ -268,33 +298,38 @@ pub struct Error {
   error_message: String,
 }
 
-impl FromLurkMessageFrame<Error> for Error {
-  fn from_lurk_message_frame(lurk_message_frame: &LurkMessageFrame) -> Result<Error, String>
+impl LurkMessageParse<Error> for Error {
+  fn parse_lurk_message(data: &[u8]) -> Result<(Error, usize), String>
   {
-    let data = lurk_message_frame.message_data.as_slice();
     let mut cursor = ReadBufferCursor::new(&data);
 
     let error_code = cursor.get_byte();
 
     if error_code.is_err() {
-      return Err(error_code.unwrap_err())
+      return Err(error_code.unwrap_err());
     }
 
     match cursor.parse_var_string() {
-      Ok(T) => Ok(Error { error_code : error_code.unwrap(), error_message : T }),
-      Err(E) => Err(E)
+      Ok(t) => {
+        let bytes_read = t.len() + 1 + 2;
+        Ok((Error { error_code: error_code.unwrap(), error_message : t }, bytes_read))
+      },
+      Err(e) => Err(e)
     }
   }
 }
 
-impl ToLurkMessageFrame for Error {
-  fn to_lurk_message_frame(&self) -> LurkMessageFrame
+impl LurkMessageBlobify for Error {
+  fn produce_lurk_message_blob(&self) -> Vec<u8>
   {
     let mut builder = OutputBuffer::new();
 
-    builder.write_byte(self.error_code).write_string(&self.error_message);
+    builder
+      .write_byte(Error::message_type())
+      .write_byte(self.error_code)
+      .write_string(&self.error_message);
 
-    LurkMessageFrame::new(Error::message_type(), builder.data)
+    builder.data
   }
 }
 
@@ -310,27 +345,26 @@ pub struct Accept {
   action_type: u8
 }
 
-impl FromLurkMessageFrame<Accept> for Accept {
-  fn from_lurk_message_frame(lurk_message_frame: &LurkMessageFrame) -> Result<Accept, String>
+impl LurkMessageParse<Accept> for Accept {
+  fn parse_lurk_message(data: &[u8]) -> Result<(Accept, usize), String>
   {
-    let data = lurk_message_frame.message_data.as_slice();
     let mut cursor = ReadBufferCursor::new(&data);
 
     match cursor.get_byte() {
-      Ok(T) => Ok(Accept { action_type : T }),
-      Err(E) => Err(E)
+      Ok(t) => Ok((Accept { action_type: t }, 1)),
+      Err(e) => Err(e)
     }
   }
 }
 
-impl ToLurkMessageFrame for Accept {
-  fn to_lurk_message_frame(&self) -> LurkMessageFrame
+impl LurkMessageBlobify for Accept {
+  fn produce_lurk_message_blob(&self) -> Vec<u8>
   {
     let mut builder = OutputBuffer::new();
 
-    builder.write_byte(self.action_type);
+    builder.write_byte(Accept::message_type()).write_byte(self.action_type);
 
-    LurkMessageFrame::new(Accept::message_type(), builder.data)
+    builder.data
   }
 }
 
@@ -348,39 +382,45 @@ pub struct Room {
   room_description: String,
 }
 
-impl FromLurkMessageFrame<Room> for Room {
-  fn from_lurk_message_frame(lurk_message_frame: &LurkMessageFrame) -> Result<Room, String>
+impl LurkMessageParse<Room> for Room {
+  fn parse_lurk_message(data: &[u8]) -> Result<(Room, usize), String>
   {
-    let data = lurk_message_frame.message_data.as_slice();
+    let mut bytes_read = 0;
     let mut cursor = ReadBufferCursor::new(&data);
 
     let room_number = cursor.parse_u16l();
+    bytes_read += 2;
     let room_name = cursor.parse_string(NAME_LENGTH);
+    bytes_read += NAME_LENGTH as usize;
     let description = cursor.parse_var_string();
 
     if room_number.is_err() || room_name.is_err() || description.is_err() {
-      return Err(String::from("Failed to parse room message."))
+      return Err(String::from("Failed to parse room message."));
     }
 
-    Ok(Room {
-      room_number : room_number.unwrap(),
-      room_name : room_name.unwrap(),
-      room_description : description.unwrap()
-    })
+    let desc = description.unwrap();
+    bytes_read += desc.len() + 2;
+
+    Ok((Room {
+      room_number: room_number.unwrap(),
+      room_name: room_name.unwrap(),
+      room_description: desc,
+    }, bytes_read))
   }
 }
 
-impl ToLurkMessageFrame for Room {
-  fn to_lurk_message_frame(&self) -> LurkMessageFrame
+impl LurkMessageBlobify for Room {
+  fn produce_lurk_message_blob(&self) -> Vec<u8>
   {
     let mut builder = OutputBuffer::new();
 
     builder
+      .write_byte(Room::message_type())
       .write_u16l(self.room_number)
       .write_string_fixed(&self.room_name, NAME_LENGTH)
       .write_string(&self.room_description);
 
-    LurkMessageFrame::new(Room::message_type(), builder.data)
+    builder.data
   }
 }
 
@@ -408,9 +448,8 @@ pub struct Character {
   description: String,
 }
 
-impl FromLurkMessageFrame<Character> for Character {
-  fn from_lurk_message_frame(lurk_message_frame: &LurkMessageFrame) -> Result<Character, String> {
-    let data = lurk_message_frame.message_data.as_slice();
+impl LurkMessageParse<Character> for Character {
+  fn parse_lurk_message(data: &[u8]) -> Result<(Character, usize), String> {
     let mut cursor = ReadBufferCursor::new(&data);
 
     let player_name = cursor.parse_string(NAME_LENGTH);
@@ -438,33 +477,35 @@ impl FromLurkMessageFrame<Character> for Character {
 
     match checker.success() {
       true => {
-        let bit_field = BitField { field : flags.unwrap() };
+        let bit_field = BitField { field: flags.unwrap() };
+        let desc = description.unwrap();
+        let bytes_read: usize = NAME_LENGTH as usize + 1 + (2 * 7) + desc.len();
 
-        Ok(Character {
+        Ok((Character {
           player_name: player_name.unwrap(),
-          is_alive : bit_field.get(7),
-          join_battles : bit_field.get(6),
-          is_monster : bit_field.get(5),
-          is_started : bit_field.get(4),
-          is_ready : bit_field.get(3),
-          attack : attack.unwrap(),
-          defense : defense.unwrap(),
-          regeneration : regen.unwrap(),
-          health : health.unwrap(),
-          gold : gold.unwrap(),
-          current_room_number : room_number.unwrap(),
-          description : description.unwrap(),
-        })
-      },
+          is_alive: bit_field.get(7),
+          join_battles: bit_field.get(6),
+          is_monster: bit_field.get(5),
+          is_started: bit_field.get(4),
+          is_ready: bit_field.get(3),
+          attack: attack.unwrap(),
+          defense: defense.unwrap(),
+          regeneration: regen.unwrap(),
+          health: health.unwrap(),
+          gold: gold.unwrap(),
+          current_room_number: room_number.unwrap(),
+          description: desc,
+        }, bytes_read))
+      }
       false => Err(String::from("Failed to parse character."))
     }
   }
 }
 
-impl ToLurkMessageFrame for Character {
-  fn to_lurk_message_frame(&self) -> LurkMessageFrame
+impl LurkMessageBlobify for Character {
+  fn produce_lurk_message_blob(&self) -> Vec<u8>
   {
-    let mut bit_field = BitField { field : 0 };
+    let mut bit_field = BitField { field: 0 };
 
     bit_field.configure(7, self.is_alive);
     bit_field.configure(6, self.join_battles);
@@ -475,6 +516,7 @@ impl ToLurkMessageFrame for Character {
     let mut builder = OutputBuffer::new();
 
     builder
+      .write_byte(Character::message_type())
       .write_string_fixed(&self.player_name, NAME_LENGTH)
       .write_byte(bit_field.field)
       .write_u16l(self.attack)
@@ -485,7 +527,7 @@ impl ToLurkMessageFrame for Character {
       .write_u16l(self.current_room_number)
       .write_string(&self.description);
 
-    LurkMessageFrame::new(Character::message_type(), builder.data)
+    builder.data
   }
 }
 
@@ -503,10 +545,9 @@ pub struct Game {
   description: String,
 }
 
-impl FromLurkMessageFrame<Game> for Game {
-  fn from_lurk_message_frame(lurk_message_frame: &LurkMessageFrame) -> Result<Game, String>
+impl LurkMessageParse<Game> for Game {
+  fn parse_lurk_message(data: &[u8]) -> Result<(Game, usize), String>
   {
-    let data = lurk_message_frame.message_data.as_slice();
     let mut cursor = ReadBufferCursor::new(&data);
 
     let initial_points = cursor.parse_u16l();
@@ -521,27 +562,34 @@ impl FromLurkMessageFrame<Game> for Game {
       .check(&description);
 
     match checker.success() {
-      true => Ok(Game {
-        initial_points : initial_points.unwrap(),
-        stat_limit : stat_limit.unwrap(),
-        description : description.unwrap(),
-      }),
+      true => {
+        let desc = description.unwrap();
+        let bytes_read = desc.len() + (2 * 3);
+
+        Ok(
+          (Game {
+            initial_points: initial_points.unwrap(),
+            stat_limit: stat_limit.unwrap(),
+            description: desc,
+          }, bytes_read))
+      }
       false => Err(String::from("Failed to parse game."))
     }
   }
 }
 
-impl ToLurkMessageFrame for Game {
-  fn to_lurk_message_frame(&self) -> LurkMessageFrame
+impl LurkMessageBlobify for Game {
+  fn produce_lurk_message_blob(&self) -> Vec<u8>
   {
     let mut builder = OutputBuffer::new();
 
     builder
+      .write_byte(Game::message_type())
       .write_u16l(self.initial_points)
       .write_u16l(self.stat_limit)
       .write_string(&self.description);
 
-    LurkMessageFrame::new(Game::message_type(), builder.data)
+    builder.data
   }
 }
 
@@ -555,10 +603,12 @@ impl LurkMessageType for Game {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 pub struct Leave;
 
-impl ToLurkMessageFrame for Leave {
-  fn to_lurk_message_frame(&self) -> LurkMessageFrame
+impl LurkMessageBlobify for Leave {
+  fn produce_lurk_message_blob(&self) -> Vec<u8>
   {
-    LurkMessageFrame::new(12, vec![])
+    let mut builder = OutputBuffer::new();
+    builder.write_byte(Leave::message_type());
+    builder.data
   }
 }
 
@@ -576,10 +626,9 @@ pub struct Connection {
   room_description: String,
 }
 
-impl FromLurkMessageFrame<Connection> for Connection {
-  fn from_lurk_message_frame(lurk_message_frame: &LurkMessageFrame) -> Result<Connection, String>
+impl LurkMessageParse<Connection> for Connection {
+  fn parse_lurk_message(data: &[u8]) -> Result<(Connection, usize), String>
   {
-    let data = lurk_message_frame.message_data.as_slice();
     let mut cursor = ReadBufferCursor::new(&data);
 
     let room_number = cursor.parse_u16l();
@@ -594,27 +643,32 @@ impl FromLurkMessageFrame<Connection> for Connection {
       .check(&description);
 
     match checker.success() {
-      true => Ok(Connection {
-        room_number : room_number.unwrap(),
-        room_name : room_name.unwrap(),
-        room_description : description.unwrap(),
-      }),
+      true => {
+        let desc = description.unwrap();
+        let bytes_read = desc.len() + NAME_LENGTH as usize + 2 + 2;
+        Ok((Connection {
+          room_number: room_number.unwrap(),
+          room_name: room_name.unwrap(),
+          room_description: desc,
+        }, bytes_read))
+      }
       false => Err(String::from("Failed to parse connection."))
     }
   }
 }
 
-impl ToLurkMessageFrame for Connection {
-  fn to_lurk_message_frame(&self) -> LurkMessageFrame
+impl LurkMessageBlobify for Connection {
+  fn produce_lurk_message_blob(&self) -> Vec<u8>
   {
     let mut builder = OutputBuffer::new();
 
     builder
+      .write_byte(Connection::message_type())
       .write_u16l(self.room_number)
       .write_string_fixed(&self.room_name, NAME_LENGTH)
       .write_string(&self.room_description);
 
-    LurkMessageFrame::new(Connection::message_type(), builder.data)
+    builder.data
   }
 }
 
@@ -628,7 +682,6 @@ impl LurkMessageType for Connection {
 
 #[cfg(test)]
 mod tests {
-
   use super::*;
 
   /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -638,30 +691,28 @@ mod tests {
       0x05, 0x00, // MESSAGE len
 
       'r' as u8, 'e' as u8, 'c' as u8, 'i' as u8, // Recipient
-      0x00,0x00,0x00,0x00,
-      0x00,0x00,0x00,0x00,
-      0x00,0x00,0x00,0x00,
-      0x00,0x00,0x00,0x00,
-      0x00,0x00,0x00,0x00,
-      0x00,0x00,0x00,0x00,
-      0x00,0x00,0x00,0x00,
-
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
       's' as u8, 'e' as u8, 'n' as u8, 'd' as u8, // Sender
-      0x00,0x00,0x00,0x00,
-      0x00,0x00,0x00,0x00,
-      0x00,0x00,0x00,0x00,
-      0x00,0x00,0x00,0x00,
-      0x00,0x00,0x00,0x00,
-      0x00,0x00,0x00,0x00,
-      0x00,0x00,0x00,0x00,
-
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
       'h' as u8, 'e' as u8, 'l' as u8, 'l' as u8, 'o' as u8 // MESSAGE
     ];
 
-    let message_frame = LurkMessageFrame::new(Message::message_type(), data);
 
-    let message = message_frame.parse::<Message>().unwrap();
+    let (message, bytes_read) = Message::parse_lurk_message(data.as_slice()).unwrap();
 
+    assert_eq!(data.len(), bytes_read);
     assert_eq!(message.message, String::from("hello"));
     assert_eq!(message.receiver, String::from("reci"));
     assert_eq!(message.sender, String::from("send"));
@@ -675,11 +726,11 @@ mod tests {
       receiver: String::from("reci"),
     };
 
-    let data = message.to_lurk_message_frame();
+    let data = message.produce_lurk_message_blob();
 
     let expectation = [
+      Message::message_type(),
       0x04, 0x00,
-
       'r' as u8, 'e' as u8, 'c' as u8, 'i' as u8,
       0x00, 0x00, 0x00, 0x00,
       0x00, 0x00, 0x00, 0x00,
@@ -688,7 +739,6 @@ mod tests {
       0x00, 0x00, 0x00, 0x00,
       0x00, 0x00, 0x00, 0x00,
       0x00, 0x00, 0x00, 0x00,
-
       's' as u8, 'e' as u8, 'n' as u8, 'd' as u8,
       0x00, 0x00, 0x00, 0x00,
       0x00, 0x00, 0x00, 0x00,
@@ -697,22 +747,20 @@ mod tests {
       0x00, 0x00, 0x00, 0x00,
       0x00, 0x00, 0x00, 0x00,
       0x00, 0x00, 0x00, 0x00,
-
       'm' as u8, 'e' as u8, 's' as u8, 's' as u8
     ];
 
-    assert_eq!(data.message_type, Message::message_type());
-    assert_eq!(data.message_data, expectation.to_vec());
+    assert_eq!(data, expectation.to_vec());
   }
+
   /////////////////////////////////////////////////////////////////////////////////////////////////
   #[test]
   fn test_changeroom_read() {
     let data = vec![0x08_u8, 0x00_u8];
 
-    let message_frame = LurkMessageFrame::new(ChangeRoom::message_type(), data);
+    let(change_room, bytes_read) = ChangeRoom::parse_lurk_message(data.as_slice()).unwrap();
 
-    let change_room = message_frame.parse::<ChangeRoom>().unwrap();
-
+    assert_eq!(data.len(), bytes_read);
     assert_eq!(change_room.room_number, 8);
   }
 
@@ -722,31 +770,33 @@ mod tests {
       room_number: 8,
     };
 
-    let data = change_room.to_lurk_message_frame();
+    let data = change_room.produce_lurk_message_blob();
 
     let expectation = [
+      ChangeRoom::message_type(),
       0x08_u8, 0x00_u8
     ];
 
-    assert_eq!(data.message_type, ChangeRoom::message_type());
-    assert_eq!(data.message_data, expectation);
+    assert_eq!(data, expectation.to_vec());
   }
+
   /////////////////////////////////////////////////////////////////////////////////////////////////
   #[test]
   fn test_fight_write() {
     let fight = Fight {};
 
-    let message_frame = fight.to_lurk_message_frame();
+    let expectation = [Fight::message_type()];
 
-    assert_eq!(message_frame.message_type, Fight::message_type());
-    assert_eq!(message_frame.message_data, vec![]);
+    let blob = fight.produce_lurk_message_blob();
+
+    assert_eq!(blob, expectation.to_vec());
   }
+
   /////////////////////////////////////////////////////////////////////////////////////////////////
   #[test]
   fn test_pvpfight_read() {
     let data = vec![
       't' as u8, 'a' as u8, 'r' as u8, 'g' as u8,
-
       0x00, 0x00, 0x00, 0x00,
       0x00, 0x00, 0x00, 0x00,
       0x00, 0x00, 0x00, 0x00,
@@ -756,11 +806,9 @@ mod tests {
       0x00, 0x00, 0x00, 0x00,
     ];
 
-    let message_frame = LurkMessageFrame::new(PvpFight::message_type(), data);
+    let (message, bytes_read) = PvpFight::parse_lurk_message(data.as_slice()).unwrap();
 
-    let pvp_fight = message_frame.parse::<PvpFight>().unwrap();
-
-    assert_eq!(pvp_fight.target, String::from("targ"));
+    assert_eq!(message.target, String::from("targ"));
   }
 
   #[test]
@@ -769,11 +817,11 @@ mod tests {
       target: String::from("targ"),
     };
 
-    let message_frame = pvpfight.to_lurk_message_frame();
+    let data = pvpfight.produce_lurk_message_blob();
 
     let expectation = vec![
+      PvpFight::message_type(),
       't' as u8, 'a' as u8, 'r' as u8, 'g' as u8,
-
       0x00, 0x00, 0x00, 0x00,
       0x00, 0x00, 0x00, 0x00,
       0x00, 0x00, 0x00, 0x00,
@@ -783,15 +831,14 @@ mod tests {
       0x00, 0x00, 0x00, 0x00,
     ];
 
-    assert_eq!(message_frame.message_type, PvpFight::message_type());
-    assert_eq!(message_frame.message_data, expectation);
+    assert_eq!(data, expectation.to_vec());
   }
+
   ////////////////////////////////////////////////////////////////////////////////////////////////
   #[test]
   fn test_loot_read() {
     let data = vec![
       'l' as u8, 'o' as u8, 'o' as u8, 't' as u8,
-
       0x00, 0x00, 0x00, 0x00,
       0x00, 0x00, 0x00, 0x00,
       0x00, 0x00, 0x00, 0x00,
@@ -801,25 +848,23 @@ mod tests {
       0x00, 0x00, 0x00, 0x00,
     ];
 
-    let message_frame = LurkMessageFrame::new(4, data);
+    let (message, bytes_read) = Loot::parse_lurk_message(data.as_slice()).unwrap();
 
-    let loot = message_frame.parse::<Loot>().unwrap();
-
-    assert_eq!(loot.target, String::from("loot"));
+    assert_eq!(data.len(), bytes_read);
+    assert_eq!(message.target, String::from("loot"));
   }
 
   #[test]
   fn test_loot_write() {
-
     let loot = Loot {
       target: String::from("loot"),
     };
 
-    let message_frame = loot.to_lurk_message_frame();
+    let data = loot.produce_lurk_message_blob();
 
     let expectation = vec![
+      Loot::message_type(),
       'l' as u8, 'o' as u8, 'o' as u8, 't' as u8,
-
       0x00, 0x00, 0x00, 0x00,
       0x00, 0x00, 0x00, 0x00,
       0x00, 0x00, 0x00, 0x00,
@@ -829,19 +874,19 @@ mod tests {
       0x00, 0x00, 0x00, 0x00,
     ];
 
-    assert_eq!(message_frame.message_type, Loot::message_type());
-    assert_eq!(message_frame.message_data, expectation);
+    assert_eq!(data, expectation.to_vec());
   }
+
   /////////////////////////////////////////////////////////////////////////////////////////////////
   #[test]
   fn test_start_write() {
     let start = Start {};
 
-    let message_frame = start.to_lurk_message_frame();
+    let blob = start.produce_lurk_message_blob();
 
-    assert_eq!(message_frame.message_type, Start::message_type());
-    assert_eq!(message_frame.message_data, vec![]);
+    assert_eq!(blob, vec![Start::message_type()]);
   }
+
   /////////////////////////////////////////////////////////////////////////////////////////////////
   #[test]
   fn test_error_read() {
@@ -851,10 +896,9 @@ mod tests {
       'c' as u8, 'a' as u8, 't' as u8
     ];
 
-    let message_frame = LurkMessageFrame::new(Error::message_type(), data);
+    let(error, bytes_read) = Error::parse_lurk_message(data.as_slice()).unwrap();
 
-    let error = message_frame.parse::<Error>().unwrap();
-
+    assert_eq!(bytes_read, data.len());
     assert_eq!(error.error_code, 6);
     assert_eq!(error.error_message, String::from("cat"))
   }
@@ -866,26 +910,26 @@ mod tests {
       error_message: String::from("cat"),
     };
 
-    let message_frame = error.to_lurk_message_frame();
+    let blob = error.produce_lurk_message_blob();
 
     let expectation = vec![
+      Error::message_type(),
       0x06,
       0x03, 0x00,
       'c' as u8, 'a' as u8, 't' as u8
     ];
 
-    assert_eq!(message_frame.message_type, Error::message_type());
-    assert_eq!(message_frame.message_data, expectation);
+    assert_eq!(blob, expectation.to_vec());
   }
+
   /////////////////////////////////////////////////////////////////////////////////////////////////
   #[test]
   fn test_accept_read() {
     let data = vec![0x05 as u8];
 
-    let message_frame = LurkMessageFrame::new(Error::message_type(), data);
+    let (accept, bytes_read) = Accept::parse_lurk_message(data.as_slice()).unwrap();
 
-    let accept = message_frame.parse::<Accept>().unwrap();
-
+    assert_eq!(data.len(), bytes_read);
     assert_eq!(accept.action_type, 0x05_u8);
   }
 
@@ -895,19 +939,18 @@ mod tests {
       action_type: 5,
     };
 
-    let message_frame = accept.to_lurk_message_frame();
+    let blob = accept.produce_lurk_message_blob();
 
-    let expectation = vec![0x05 as u8];
+    let expectation = vec![Accept::message_type(), 0x05 as u8];
 
-    assert_eq!(message_frame.message_type, Accept::message_type());
-    assert_eq!(message_frame.message_data, expectation);
+    assert_eq!(blob, expectation.to_vec());
   }
+
   /////////////////////////////////////////////////////////////////////////////////////////////////
   #[test]
   fn test_room_read() {
     let data = vec![
       0x08, 0x00,
-
       'r' as u8, 'o' as u8, 'o' as u8, 'm' as u8,
       0x00, 0x00, 0x00, 0x00,
       0x00, 0x00, 0x00, 0x00,
@@ -916,15 +959,14 @@ mod tests {
       0x00, 0x00, 0x00, 0x00,
       0x00, 0x00, 0x00, 0x00,
       0x00, 0x00, 0x00, 0x00,
-
       0x04, 0x00,
       'h' as u8, 'e' as u8, 'l' as u8, 'l' as u8
     ];
 
-    let message_frame = LurkMessageFrame::new(Room::message_type(), data);
 
-    let room = message_frame.parse::<Room>().unwrap();
+    let(room, bytes_read) = Room::parse_lurk_message(data.as_slice()).unwrap();
 
+    assert_eq!(data.len(), bytes_read);
     assert_eq!(room.room_number, 0x08_u16);
     assert_eq!(room.room_name, String::from("room"));
     assert_eq!(room.room_description, String::from("hell"));
@@ -938,11 +980,11 @@ mod tests {
       room_description: String::from("hell"),
     };
 
-    let message_frame = room.to_lurk_message_frame();
+    let blob = room.produce_lurk_message_blob();
 
     let expectation = vec![
+      Room::message_type(),
       0x08, 0x00,
-
       'r' as u8, 'o' as u8, 'o' as u8, 'm' as u8,
       0x00, 0x00, 0x00, 0x00,
       0x00, 0x00, 0x00, 0x00,
@@ -951,24 +993,21 @@ mod tests {
       0x00, 0x00, 0x00, 0x00,
       0x00, 0x00, 0x00, 0x00,
       0x00, 0x00, 0x00, 0x00,
-
       0x04, 0x00,
       'h' as u8, 'e' as u8, 'l' as u8, 'l' as u8
     ];
 
-    assert_eq!(message_frame.message_type, Room::message_type());
-    assert_eq!(message_frame.message_data, expectation);
+    assert_eq!(blob, expectation.to_vec());
   }
+
   /////////////////////////////////////////////////////////////////////////////////////////////////
   #[test]
   fn test_character_read() {
     let data = vec![
-
       'p' as u8, 'l' as u8, 'a' as u8, 'y' as u8, 0x00, 0x00, 0x00, 0x00, // name
       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-
       0b10101010, // flags
 
       0xF0, 0x00, // attack
@@ -982,10 +1021,10 @@ mod tests {
       'h' as u8, 'e' as u8, 'l' as u8, 'l' as u8
     ];
 
-    let message_frame = LurkMessageFrame::new(Character::message_type(), data);
 
-    let character = message_frame.parse::<Character>().unwrap();
+    let(character, bytes_read) = Character::parse_lurk_message(data.as_slice()).unwrap();
 
+    assert_eq!(data.len(), bytes_read);
     assert_eq!(character.player_name, String::from("play"));
     assert_eq!(character.is_alive, true);
     assert_eq!(character.join_battles, false);
@@ -1019,15 +1058,14 @@ mod tests {
       description: String::from("hell"),
     };
 
-    let message_frame = character.to_lurk_message_frame();
+    let blob = character.produce_lurk_message_blob();
 
     let expectation = vec![
-
+      Character::message_type(),
       'p' as u8, 'l' as u8, 'a' as u8, 'y' as u8, 0x00, 0x00, 0x00, 0x00, // name
       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-
       0b10101000, // flags
 
       0xF0, 0x00, // attack
@@ -1041,9 +1079,9 @@ mod tests {
       'h' as u8, 'e' as u8, 'l' as u8, 'l' as u8
     ];
 
-    assert_eq!(message_frame.message_type, Character::message_type());
-    assert_eq!(message_frame.message_data, expectation);
+    assert_eq!(blob, expectation.to_vec());
   }
+
   /////////////////////////////////////////////////////////////////////////////////////////////////
   #[test]
   fn test_game_read() {
@@ -1055,10 +1093,9 @@ mod tests {
       'g' as u8, 'a' as u8, 'm' as u8, 'e' as u8
     ];
 
-    let message_frame = LurkMessageFrame::new(Game::message_type(), data);
+    let (game, bytes_read) = Game::parse_lurk_message(data.as_slice()).unwrap();
 
-    let game = message_frame.parse::<Game>().unwrap();
-
+    assert_eq!(data.len(), bytes_read);
     assert_eq!(game.initial_points, 0xFF_00);
     assert_eq!(game.stat_limit, 0x00_FF);
     assert_eq!(game.description, String::from("game"));
@@ -1072,9 +1109,10 @@ mod tests {
       description: String::from("game"),
     };
 
-    let message_frame = game.to_lurk_message_frame();
+    let blob = game.produce_lurk_message_blob();
 
     let expectation = vec![
+      Game::message_type(),
       0x00, 0xFF, // init points
       0xFF, 0x00, // stat limit
 
@@ -1082,21 +1120,21 @@ mod tests {
       'g' as u8, 'a' as u8, 'm' as u8, 'e' as u8
     ];
 
-    assert_eq!(message_frame.message_type, Game::message_type());
-    assert_eq!(message_frame.message_data, expectation);
+    assert_eq!(blob, expectation.to_vec());
   }
+
   /////////////////////////////////////////////////////////////////////////////////////////////////
   #[test]
   fn test_leave_write() {
     let leave = Leave {};
 
-    let message_frame = leave.to_lurk_message_frame();
+    let blob = leave.produce_lurk_message_blob();
 
-    let expectation = vec![];
+    let expectation = vec![Leave::message_type()];
 
-    assert_eq!(message_frame.message_type, Leave::message_type());
-    assert_eq!(message_frame.message_data, expectation);
+    assert_eq!(blob, expectation.to_vec());
   }
+
   /////////////////////////////////////////////////////////////////////////////////////////////////
   #[test]
   fn test_connection_read() {
@@ -1107,15 +1145,13 @@ mod tests {
       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-
       0x04, 0x00, // description
       'h' as u8, 'e' as u8, 'l' as u8, 'l' as u8
     ];
 
-    let message_frame = LurkMessageFrame::new(Connection::message_type(), data);
+    let (connection, bytes_read) = Connection::parse_lurk_message(data.as_slice()).unwrap();
 
-    let connection = message_frame.parse::<Connection>().unwrap();
-
+    assert_eq!(data.len(), bytes_read);
     assert_eq!(connection.room_number, 0x00_03);
     assert_eq!(connection.room_name, String::from("room"));
     assert_eq!(connection.room_description, String::from("hell"));
@@ -1129,22 +1165,21 @@ mod tests {
       room_description: String::from("hell"),
     };
 
-    let message_frame = connection.to_lurk_message_frame();
+    let blob = connection.produce_lurk_message_blob();
 
     let expectation = vec![
+      Connection::message_type(),
       0x03, 0x00, // room number
 
       'r' as u8, 'o' as u8, 'o' as u8, 'm' as u8, 0x00, 0x00, 0x00, 0x00, // name
       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-
       0x04, 0x00, // description
       'h' as u8, 'e' as u8, 'l' as u8, 'l' as u8
     ];
 
-    assert_eq!(message_frame.message_type, Connection::message_type());
-    assert_eq!(message_frame.message_data, expectation);
+    assert_eq!(blob, expectation.to_vec());
   }
   /////////////////////////////////////////////////////////////////////////////////////////////////
 }

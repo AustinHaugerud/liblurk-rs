@@ -1,5 +1,4 @@
 use std::str::*;
-use std::fmt::format;
 
 pub struct ReadBufferCursor<'a> {
   index: usize,
@@ -40,11 +39,11 @@ impl<'a> ReadBufferCursor<'a> {
   /// descriptor(little endian) then the string itself.
   pub fn parse_var_string(&mut self) -> Result<String, String> {
     match parse_var_string(&self.bytes[self.index..self.bytes.len()]) {
-      Ok(T) => {
-        self.index += T.len() + 2;
-        Ok(T)
+      Ok(t) => {
+        self.index += t.len() + 2;
+        Ok(t)
       },
-      Err(E) => Err(E)
+      Err(e) => Err(e)
     }
   }
 
@@ -53,7 +52,7 @@ impl<'a> ReadBufferCursor<'a> {
     let result = parse_string(&self.bytes[self.index..(self.index + (capacity as usize))], capacity);
     self.index += capacity as usize;
     match result {
-      Ok(T) => Ok(T.to_string()),
+      Ok(t) => Ok(t.to_string()),
       Err(_) => Err(String::from("Failed to parse string."))
     }
   }
@@ -99,7 +98,7 @@ fn parse_var_string(bytes: &[u8]) -> Result<String, String>
   }
 
   match from_utf8(&bytes[2..(2 + size)]) {
-    Ok(T) => Ok(T.to_string()),
+    Ok(t) => Ok(t.to_string()),
     Err(_) => Err(String::from("Failed to parse utf8 data."))
   }
 }
@@ -115,7 +114,7 @@ fn parse_string(bytes: &[u8], capacity: u16) -> Result<String, String> {
   }
 
   match from_utf8(&bytes[0..index]) {
-    Ok(T) => Ok(T.to_string()),
+    Ok(t) => Ok(t.to_string()),
     Err(_) => Err(String::from("Failed to parse utf8 data."))
   }
 }
