@@ -8,8 +8,7 @@ use std::net::TcpListener;
 use std::collections::HashMap;
 use std::thread;
 use std::sync::Arc;
-use std::sync::{Mutex, MutexGuard};
-use std::borrow::BorrowMut;
+use std::sync::Mutex;
 
 struct Client {
   stream : TcpStream,
@@ -21,7 +20,10 @@ impl Client {
 
   pub fn main(&mut self, callbacks : Arc<Mutex<Box<ServerCallbacks + Send>>>) {
     while self.active {
-      self.update(callbacks.clone());
+      let result = self.update(callbacks.clone());
+      if result.is_err() {
+        println!("Error: {}", result.unwrap_err());
+      }
     }
   }
 

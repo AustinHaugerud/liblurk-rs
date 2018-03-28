@@ -4,14 +4,25 @@ use protocol::protocol_message::*;
 use protocol::read::LurkReadChannel;
 use protocol::send::LurkSendChannel;
 
+
+pub trait ClientSessionCallbacks {
+  fn on_message(&mut self, channel : &mut LurkSendChannel<TcpStream>, message : &Message);
+  fn on_error(&mut self, channel : &mut LurkSendChannel<TcpStream>, error : &Error);
+  fn on_accept(&mut self, channel : &mut LurkSendChannel<TcpStream>, accept : &Accept);
+  fn on_room(&mut self, channel : &mut LurkSendChannel<TcpStream>, room : &Room);
+  fn on_character(&mut self, channel : &mut LurkSendChannel<TcpStream>, character : &Character);
+  fn on_game(&mut self, channel : &mut LurkSendChannel<TcpStream>, game : &Game);
+  fn on_connection(&mut self, channel : &mut LurkSendChannel<TcpStream>, connection : &Connection);
+}
+
 pub struct ClientSession {
   stream : TcpStream,
-  callbacks : ClientSessionCallbacks,
+  callbacks : Box<ClientSessionCallbacks>,
 }
 
 impl ClientSession {
 
-  pub fn create((host, port) : (IpAddr, u16), behavior : ClientSessionCallbacks) -> Result<ClientSession, String> {
+  pub fn create((host, port) : (IpAddr, u16), behavior : Box<ClientSessionCallbacks>) -> Result<ClientSession, String> {
     match TcpStream::connect((host, port)) {
       Ok(t) => {
         let client = ClientSession {
@@ -21,7 +32,7 @@ impl ClientSession {
 
         Ok(client)
       },
-      Err(e) => Err(String::from("Failed to connect."))
+      Err(_) => Err(String::from("Failed to connect."))
     }
   }
 
@@ -40,7 +51,7 @@ impl ClientSession {
       LurkMessageKind::Message => {
         let (message, _) = Message::parse_lurk_message(data.as_slice())?;
         let mut send_channel = LurkSendChannel::new(&mut self.stream);
-        self.callbacks.message_callback.as_ref()(&mut send_channel, &message);
+        self.callbacks.on_message(&mut send_channel, &message);
       },
       LurkMessageKind::ChangeRoom => {
         ChangeRoom::parse_lurk_message(data.as_slice())?;
@@ -60,61 +71,37 @@ impl ClientSession {
       LurkMessageKind::Error => {
         let (message, _) = Error::parse_lurk_message(data.as_slice())?;
         let mut send_channel = LurkSendChannel::new(&mut self.stream);
-        self.callbacks.error_callback.as_ref()(&mut send_channel, &message);
+        self.callbacks.on_error(&mut send_channel, &message);
       },
       LurkMessageKind::Accept => {
         let (message, _) = Accept::parse_lurk_message(data.as_slice())?;
         let mut send_channel = LurkSendChannel::new(&mut self.stream);
-        self.callbacks.accept_callback.as_ref()(&mut send_channel, &message);
+        self.callbacks.on_accept(&mut send_channel, &message);
       },
       LurkMessageKind::Room => {
         let (message, _) = Room::parse_lurk_message(data.as_slice())?;
         let mut send_channel = LurkSendChannel::new(&mut self.stream);
-        self.callbacks.room_callback.as_ref()(&mut send_channel, &message);
+        self.callbacks.on_room(&mut send_channel, &message);
       },
       LurkMessageKind::Character => {
         let (message, _) = Character::parse_lurk_message(data.as_slice())?;
         let mut send_channel = LurkSendChannel::new(&mut self.stream);
-        self.callbacks.character_callback.as_ref()(&mut send_channel, &message);
+        self.callbacks.on_character(&mut send_channel, &message);
       },
       LurkMessageKind::Game => {
         let (message, _) = Game::parse_lurk_message(data.as_slice())?;
         let mut send_channel = LurkSendChannel::new(&mut self.stream);
-        self.callbacks.game_callback.as_ref()(&mut send_channel, &message);
+        self.callbacks.on_game(&mut send_channel, &message);
       },
       LurkMessageKind::Leave => {
       },
       LurkMessageKind::Connection => {
         let (message, _) = Connection::parse_lurk_message(data.as_slice())?;
         let mut send_channel = LurkSendChannel::new(&mut self.stream);
-        self.callbacks.connection_callback.as_ref()(&mut send_channel, &message);
+        self.callbacks.on_connection(&mut send_channel, &message);
       },
     };
 
     Ok(())
-  }
-}
-
-pub struct ClientSessionCallbacks {
-  message_callback    : Box<Fn(&mut LurkSendChannel<TcpStream>, &Message)>,
-  error_callback      : Box<Fn(&mut LurkSendChannel<TcpStream>, &Error)>,
-  accept_callback     : Box<Fn(&mut LurkSendChannel<TcpStream>, &Accept)>,
-  room_callback       : Box<Fn(&mut LurkSendChannel<TcpStream>, &Room)>,
-  character_callback  : Box<Fn(&mut LurkSendChannel<TcpStream>, &Character)>,
-  game_callback       : Box<Fn(&mut LurkSendChannel<TcpStream>, &Game)>,
-  connection_callback : Box<Fn(&mut LurkSendChannel<TcpStream>, &Connection)>,
-}
-
-impl ClientSessionCallbacks {
-  pub fn default() -> ClientSessionCallbacks {
-    ClientSessionCallbacks {
-      message_callback    : Box::new(|_, _| {}),
-      error_callback      : Box::new(|_, _| {}),
-      accept_callback     : Box::new(|_, _| {}),
-      room_callback       : Box::new(|_, _| {}),
-      character_callback  : Box::new(|_, _| {}),
-      game_callback       : Box::new(|_, _| {}),
-      connection_callback : Box::new(|_, _| {}),
-    }
   }
 }
