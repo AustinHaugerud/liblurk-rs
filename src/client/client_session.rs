@@ -11,22 +11,18 @@ pub struct ClientSession {
 
 impl ClientSession {
 
-  pub fn connect((host, port) : (IpAddr, u16)) -> Result<ClientSession, ()> {
+  pub fn create((host, port) : (IpAddr, u16), behavior : ClientSessionCallbacks) -> Result<ClientSession, String> {
     match TcpStream::connect((host, port)) {
       Ok(t) => {
         let client = ClientSession {
-          stream: t,
-          callbacks: ClientSessionCallbacks::default()
+          stream : t,
+          callbacks : behavior,
         };
 
         Ok(client)
       },
-      Err(_) => Err(())
+      Err(e) => Err(String::from("Failed to connect."))
     }
-  }
-
-  pub fn set_on_message(&mut self, func : Box<Fn(&mut LurkSendChannel<TcpStream>, &Message)>) {
-    self.callbacks.message_callback = func;
   }
 
   pub fn pull_message(&mut self) -> Result<(LurkMessageKind, Vec<u8>), String> {
@@ -99,7 +95,7 @@ impl ClientSession {
   }
 }
 
-struct ClientSessionCallbacks {
+pub struct ClientSessionCallbacks {
   message_callback    : Box<Fn(&mut LurkSendChannel<TcpStream>, &Message)>,
   error_callback      : Box<Fn(&mut LurkSendChannel<TcpStream>, &Error)>,
   accept_callback     : Box<Fn(&mut LurkSendChannel<TcpStream>, &Accept)>,
@@ -110,8 +106,7 @@ struct ClientSessionCallbacks {
 }
 
 impl ClientSessionCallbacks {
-  fn default() -> ClientSessionCallbacks {
-
+  pub fn default() -> ClientSessionCallbacks {
     ClientSessionCallbacks {
       message_callback    : Box::new(|_, _| {}),
       error_callback      : Box::new(|_, _| {}),
