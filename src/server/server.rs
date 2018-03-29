@@ -145,7 +145,7 @@ impl Server {
     while self.running {
       let mut new_clients = vec![];
       for client_request in self.listener.incoming() {
-        println("Incoming!");
+        println!("Incoming!");
         match client_request {
           Ok(t) => {
             let client = Client {
