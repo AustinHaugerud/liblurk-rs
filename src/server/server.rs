@@ -150,7 +150,7 @@ impl Server {
         break;
       }
 
-      println!("Incoming!");
+
       match client_request {
         Ok(t) => {
           let client = Client {
@@ -159,7 +159,6 @@ impl Server {
             active : false,
           };
 
-          //new_clients.push(client);
           if self.add_client(client).is_err() {
             println!("Failed to add client.");
           }
@@ -170,7 +169,7 @@ impl Server {
   }
 
   fn add_client(&mut self, client : Client) -> Result<(), String> {
-    println!("Added client.");
+
     let key = client.id.clone();
     {
       self.clients.insert(key, Arc::new(Mutex::new(client)));
