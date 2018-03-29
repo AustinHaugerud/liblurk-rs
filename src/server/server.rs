@@ -168,6 +168,7 @@ impl Server {
   }
 
   fn add_client(&mut self, client : Client) -> Result<(), String> {
+    println!("Added client.");
     let key = client.id.clone();
     {
       self.clients.insert(key, Arc::new(Mutex::new(client)));
