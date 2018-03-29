@@ -110,61 +110,62 @@ pub trait ServerCallbacks {
 
 pub struct Server {
   clients : HashMap<Uuid, Arc<Mutex<Client>>>,
-  listener : TcpListener,
   callbacks : Arc<Mutex<Box<ServerCallbacks + Send>>>,
-  running : bool
+  running : bool,
+  server_address : (IpAddr, u16)
 }
 
 impl Server {
   pub fn create((host, port) : (IpAddr, u16), behavior : Box<ServerCallbacks + Send>) -> Result<Server, String> {
-    match TcpListener::bind((host, port)) {
-      Ok(t) => {
-        Ok(
-          Server {
-            clients : HashMap::new(),
-            listener : t,
-            callbacks : Arc::new(Mutex::new(behavior)),
-            running : false
-          }
-        )
-      },
-      Err(_) => Err(String::from("Failed to bind listener."))
-    }
+    Ok(Server {
+      clients : HashMap::new(),
+      callbacks : Arc::new(Mutex::new(behavior)),
+      running : false,
+      server_address : (host, port)
+    })
   }
 
-  pub fn start(&mut self) {
+  pub fn start(&mut self) -> bool {
+
+    let listener_result = TcpListener::bind(self.server_address);
+
+    if listener_result.is_err() {
+      return false;
+    }
+
     self.running = true;
-    self.main();
+    self.main(listener_result.unwrap());
+
+    return true;
   }
 
   pub fn stop(&mut self) {
     self.running = false;
   }
 
-  fn main(&mut self) {
-    while self.running {
-      let mut new_clients = vec![];
-      for client_request in self.listener.incoming() {
-        println!("Incoming!");
-        match client_request {
-          Ok(t) => {
-            let client = Client {
-              stream : t,
-              id : Uuid::new_v4(),
-              active : false,
-            };
+  fn main(&mut self, listener : TcpListener) {
+    for client_request in listener.incoming() {
 
-            new_clients.push(client);
-          },
-          Err(_) => {},
-        };
+      if !self.running {
+        break;
       }
 
-      for i in 0..new_clients.len() {
-        if self.add_client(new_clients.remove(i)).is_err() {
-          println!("Warning: Failed to Add Client.");
-        }
-      }
+      println!("Incoming!");
+      match client_request {
+        Ok(t) => {
+          let client = Client {
+            stream : t,
+            id : Uuid::new_v4(),
+            active : false,
+          };
+
+          //new_clients.push(client);
+          if self.add_client(client).is_err() {
+            println!("Failed to add client.");
+          }
+        },
+        Err(_) => {},
+      };
     }
   }
 
