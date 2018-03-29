@@ -1,3 +1,4 @@
+
 use super::primitive_parse::*;
 use super::primitive_break::OutputBuffer;
 use ::util::ResultLinkChecker;
@@ -72,9 +73,23 @@ pub trait LurkMessageType {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 pub struct Message {
-  message: String,
-  sender: String,
-  receiver: String,
+  pub message: String,
+  pub sender: String,
+  pub receiver: String,
+}
+
+impl Message {
+  pub fn new(message_content : String, sender : String, receiver : String) -> Result<Message, ()> {
+    if message_content.len() < u16::max_value() as usize && sender.len() <= 32 && receiver.len() <= 32 {
+      return Ok(Message {
+        message : message_content,
+        sender,
+        receiver,
+      });
+    }
+
+    Err(())
+  }
 }
 
 impl LurkMessageParse<Message> for Message {
@@ -140,7 +155,15 @@ impl LurkMessageType for Message {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 pub struct ChangeRoom {
-  room_number: u16,
+  pub room_number: u16,
+}
+
+impl ChangeRoom {
+  pub fn new(room_number : u16) -> ChangeRoom {
+    ChangeRoom {
+      room_number
+    }
+  }
 }
 
 impl LurkMessageParse<ChangeRoom> for ChangeRoom {
@@ -175,6 +198,12 @@ impl LurkMessageType for ChangeRoom {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 pub struct Fight;
 
+impl Fight {
+  pub fn new() -> Fight {
+    Fight{}
+  }
+}
+
 impl LurkMessageParse<Fight> for Fight {
   fn parse_lurk_message(_ : &[u8]) -> Result<(Fight, usize), String>
   {
@@ -199,7 +228,17 @@ impl LurkMessageType for Fight {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 pub struct PvpFight {
-  target: String,
+  pub target: String,
+}
+
+impl PvpFight {
+  pub fn new(target : String) -> Result<PvpFight, ()> {
+    if target.len() <= 32 {
+      return Ok(PvpFight{ target });
+    }
+
+    Err(())
+  }
 }
 
 impl LurkMessageParse<PvpFight> for PvpFight {
@@ -234,7 +273,17 @@ impl LurkMessageType for PvpFight {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 pub struct Loot {
-  target: String,
+  pub target: String,
+}
+
+impl Loot {
+  pub fn new(target : String) -> Result<Loot, ()> {
+    if target.len() <= 32 {
+      return Ok(Loot{ target });
+    }
+
+    Err(())
+  }
 }
 
 impl LurkMessageParse<Loot> for Loot {
@@ -270,6 +319,12 @@ impl LurkMessageType for Loot {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 pub struct Start;
 
+impl Start {
+  pub fn new() -> Start {
+    Start {}
+  }
+}
+
 impl LurkMessageParse<Start> for Start {
   fn parse_lurk_message(_ : &[u8]) -> Result<(Start, usize), String> {
     Ok((Start {}, 0))
@@ -294,8 +349,18 @@ impl LurkMessageType for Start {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 pub struct Error {
-  error_code: u8,
-  error_message: String,
+  pub error_code: u8,
+  pub error_message: String,
+}
+
+impl Error {
+  pub fn new(error_code : u8, error_message : String) -> Result<Error, ()> {
+    if error_message.len() < u16::max_value() as usize {
+      return Ok(Error { error_code, error_message });
+    }
+
+    Err(())
+  }
 }
 
 impl LurkMessageParse<Error> for Error {
@@ -342,7 +407,13 @@ impl LurkMessageType for Error {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 pub struct Accept {
-  action_type: u8
+  pub action_type: u8
+}
+
+impl Accept {
+  pub fn new(action_type : u8) -> Accept {
+    Accept { action_type }
+  }
 }
 
 impl LurkMessageParse<Accept> for Accept {
@@ -377,9 +448,19 @@ impl LurkMessageType for Accept {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 pub struct Room {
-  room_number: u16,
-  room_name: String,
-  room_description: String,
+  pub room_number: u16,
+  pub room_name: String,
+  pub room_description: String,
+}
+
+impl Room {
+  pub fn new(room_number : u16, room_name : String, room_description : String) -> Result<Room, ()> {
+    if room_name.len() <= 32 && room_description.len() < u16::max_value() as usize {
+      return Ok(Room { room_number, room_name, room_description });
+    }
+
+    Err(())
+  }
 }
 
 impl LurkMessageParse<Room> for Room {
@@ -433,19 +514,55 @@ impl LurkMessageType for Room {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 pub struct Character {
-  player_name: String,
-  is_alive: bool,
-  join_battles: bool,
-  is_monster: bool,
-  is_started: bool,
-  is_ready: bool,
-  attack: u16,
-  defense: u16,
-  regeneration: u16,
-  health: i16,
-  gold: u16,
-  current_room_number: u16,
-  description: String,
+  pub player_name: String,
+  pub is_alive: bool,
+  pub join_battles: bool,
+  pub is_monster: bool,
+  pub is_started: bool,
+  pub is_ready: bool,
+  pub attack: u16,
+  pub defense: u16,
+  pub regeneration: u16,
+  pub health: i16,
+  pub gold: u16,
+  pub current_room_number: u16,
+  pub description: String,
+}
+
+impl Character {
+  pub fn new(player_name : String,
+             is_alive : bool,
+             join_battles : bool,
+             is_monster : bool,
+             is_started : bool,
+             is_ready : bool,
+             attack : u16,
+             defense : u16,
+             regeneration : u16,
+             health : i16,
+             gold : u16,
+             current_room_number : u16,
+             description : String) -> Result<Character, ()> {
+    if player_name.len() <= 32 && description.len() < u16::max_value() as usize {
+      return Ok(Character {
+        player_name,
+        is_alive,
+        join_battles,
+        is_monster,
+        is_started,
+        is_ready,
+        attack,
+        defense,
+        regeneration,
+        health,
+        gold,
+        current_room_number,
+        description
+      });
+    }
+
+    Err(())
+  }
 }
 
 impl LurkMessageParse<Character> for Character {
@@ -540,9 +657,19 @@ impl LurkMessageType for Character {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 pub struct Game {
-  initial_points: u16,
-  stat_limit: u16,
-  description: String,
+  pub initial_points: u16,
+  pub stat_limit: u16,
+  pub description: String,
+}
+
+impl Game {
+  pub fn new(initial_points : u16, stat_limit : u16, description : String) -> Result<Game, ()> {
+    if description.len() < u16::max_value() as usize {
+      return Ok(Game { initial_points, stat_limit, description });
+    }
+
+    Err(())
+  }
 }
 
 impl LurkMessageParse<Game> for Game {
@@ -603,6 +730,12 @@ impl LurkMessageType for Game {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 pub struct Leave;
 
+impl Leave {
+  pub fn new() -> Leave {
+    Leave {}
+  }
+}
+
 impl LurkMessageBlobify for Leave {
   fn produce_lurk_message_blob(&self) -> Vec<u8>
   {
@@ -621,9 +754,19 @@ impl LurkMessageType for Leave {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 pub struct Connection {
-  room_number: u16,
-  room_name: String,
-  room_description: String,
+  pub room_number: u16,
+  pub room_name: String,
+  pub room_description: String,
+}
+
+impl Connection {
+  pub fn new(room_number : u16, room_name : String, room_description : String) -> Result<Connection, ()> {
+    if room_name.len() <= 32 && room_description.len() < u16::max_value() as usize {
+      return Ok(Connection { room_number, room_name, room_description });
+    }
+
+    Err(())
+  }
 }
 
 impl LurkMessageParse<Connection> for Connection {
