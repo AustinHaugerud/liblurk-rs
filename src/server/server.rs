@@ -10,7 +10,7 @@ use std::thread;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-struct Client {
+pub struct Client {
   stream : TcpStream,
   id : Uuid,
   active : bool,
@@ -18,46 +18,56 @@ struct Client {
 
 impl Client {
 
-  pub fn main(&mut self, callbacks : Arc<Mutex<Box<ServerCallbacks + Send>>>) {
+  pub fn get_send_channel(&mut self) -> LurkSendChannel<TcpStream> {
+    LurkSendChannel::new(&mut self.stream)
+  }
+
+  fn main(&mut self, callbacks : Arc<Mutex<Box<ServerCallbacks + Send>>>, server_access : ServerAccess) {
     while self.active {
-      let result = self.update(callbacks.clone());
+      let result = self.update(callbacks.clone(), &server_access);
       if result.is_err() {
         println!("Error: {}", result.unwrap_err());
       }
     }
   }
 
-  fn update(&mut self, callbacks : Arc<Mutex<Box<ServerCallbacks + Send>>>) -> Result<(), String> {
+  fn update(&mut self, callbacks : Arc<Mutex<Box<ServerCallbacks + Send>>>, server_access : &ServerAccess) -> Result<(), String> {
 
     let mut callbacks_guard = callbacks.lock().map_err(|_| { String::from("Mutex poison error.") })?;
 
     let (kind, data) = self.pull_client_message()?;
-    let mut send_channel = LurkSendChannel::new(&mut self.stream);
+    let send_channel = LurkSendChannel::new(&mut self.stream);
+    //let mut context = ServerEventContext::new(server_access, send_channel, &self.id);
+    let mut context = ServerEventContext {
+      server: server_access,
+      write_channel: send_channel,
+      client_id: self.id.clone(),
+    };
 
     match kind {
       LurkMessageKind::Message => {
         let (message, _) = Message::parse_lurk_message(data.as_slice())?;
-        callbacks_guard.on_message(&mut send_channel, &self.id, &message);
+        callbacks_guard.on_message(&mut context, &message);
       },
       LurkMessageKind::ChangeRoom => {
         let (message, _) = ChangeRoom::parse_lurk_message(data.as_slice())?;
-        callbacks_guard.on_change_room(&mut send_channel, &self.id, &message);
+        callbacks_guard.on_change_room(&mut context, &message);
       },
       LurkMessageKind::Fight => {
         let (message, _) = Fight::parse_lurk_message(data.as_slice())?;
-        callbacks_guard.on_fight(&mut send_channel, &self.id, &message);
+        callbacks_guard.on_fight(&mut context, &message);
       },
       LurkMessageKind::PvPFight => {
         let (message, _) = PvpFight::parse_lurk_message(data.as_slice())?;
-        callbacks_guard.on_pvp_fight(&mut send_channel, &self.id, &message);
+        callbacks_guard.on_pvp_fight(&mut context, &message);
       },
       LurkMessageKind::Loot => {
         let (message, _) = Loot::parse_lurk_message(data.as_slice())?;
-        callbacks_guard.on_loot(&mut send_channel, &self.id, &message);
+        callbacks_guard.on_loot(&mut context, &message);
       },
       LurkMessageKind::Start => {
         let (message, _) = Start::parse_lurk_message(data.as_slice())?;
-        callbacks_guard.on_start(&mut send_channel, &self.id, &message);
+        callbacks_guard.on_start(&mut context, &message);
       },
       LurkMessageKind::Error => {
         Error::parse_lurk_message(data.as_slice())?;
@@ -70,7 +80,7 @@ impl Client {
       },
       LurkMessageKind::Character => {
         let (message, _) = Character::parse_lurk_message(data.as_slice())?;
-        callbacks_guard.on_character(&mut send_channel, &self.id, &message);
+        callbacks_guard.on_character(&mut context, &message);
       },
       LurkMessageKind::Game => {
         Game::parse_lurk_message(data.as_slice())?;
@@ -95,21 +105,52 @@ impl Client {
 }
 
 pub trait ServerCallbacks {
-  fn on_connect(&mut self, channel : &mut LurkSendChannel<TcpStream>, id : &Uuid);
-  fn on_disconnect(&mut self, channel : &Uuid);
+  fn on_connect(&mut self, context : &mut ServerEventContext);
+  fn on_disconnect(&mut self, client_id : &Uuid);
 
-  fn on_message(&mut self, channel : &mut LurkSendChannel<TcpStream>, id : &Uuid, message : &Message);
-  fn on_change_room(&mut self, channel : &mut LurkSendChannel<TcpStream>, id : &Uuid, change_room : &ChangeRoom);
-  fn on_fight(&mut self, channel : &mut LurkSendChannel<TcpStream>, id : &Uuid, fight : &Fight);
-  fn on_pvp_fight(&mut self, channel : &mut LurkSendChannel<TcpStream>, id : &Uuid, fight : &PvpFight);
-  fn on_loot(&mut self, channel : &mut LurkSendChannel<TcpStream>, id : &Uuid, loot : &Loot);
-  fn on_start(&mut self, channel : &mut LurkSendChannel<TcpStream>, id : &Uuid, fight : &Start);
-  fn on_character(&mut self, channel : &mut LurkSendChannel<TcpStream>, id : &Uuid, character : &Character);
-  fn on_leave(&mut self, id : &Uuid);
+  fn on_message(&mut self,     context : &mut ServerEventContext, message : &Message);
+  fn on_change_room(&mut self, context : &mut ServerEventContext, change_room : &ChangeRoom);
+  fn on_fight(&mut self,       context : &mut ServerEventContext, fight : &Fight);
+  fn on_pvp_fight(&mut self,   context : &mut ServerEventContext, pvp_fight : &PvpFight);
+  fn on_loot(&mut self,        context : &mut ServerEventContext, loot : &Loot);
+  fn on_start(&mut self,       context : &mut ServerEventContext, start : &Start);
+  fn on_character(&mut self,   context : &mut ServerEventContext, character : &Character);
+  fn on_leave(&mut self, client_id : &Uuid);
+}
+
+pub struct ServerAccess {
+  clients : Arc<Mutex<HashMap<Uuid, Arc<Mutex<Client>>>>>,
+}
+
+pub struct ServerEventContext<'a> {
+  server : &'a ServerAccess,
+  write_channel : LurkSendChannel<'a, TcpStream>,
+  client_id : Uuid,
+}
+
+impl<'a> ServerEventContext<'a> {
+
+  pub fn get_client(&self, id : &Uuid) -> Option<Arc<Mutex<Client>>> {
+    let guard = self.server.clients.lock().expect("Client retrieval: poison error");
+
+    match guard.get(id) {
+      Some(s) => Some(s.clone()),
+      None => None,
+    }
+  }
+
+  pub fn get_send_channel(&mut self) -> &mut LurkSendChannel<'a, TcpStream> {
+    &mut self.write_channel
+  }
+
+  pub fn get_client_id(&self) -> Uuid {
+    self.client_id.clone()
+  }
+
 }
 
 pub struct Server {
-  clients : HashMap<Uuid, Arc<Mutex<Client>>>,
+  clients : Arc<Mutex<HashMap<Uuid, Arc<Mutex<Client>>>>>,
   callbacks : Arc<Mutex<Box<ServerCallbacks + Send>>>,
   running : bool,
   server_address : (IpAddr, u16)
@@ -118,7 +159,7 @@ pub struct Server {
 impl Server {
   pub fn create((host, port) : (IpAddr, u16), behavior : Box<ServerCallbacks + Send>) -> Result<Server, String> {
     Ok(Server {
-      clients : HashMap::new(),
+      clients : Arc::new(Mutex::new(HashMap::new())),
       callbacks : Arc::new(Mutex::new(behavior)),
       running : false,
       server_address : (host, port)
@@ -172,19 +213,29 @@ impl Server {
 
     let key = client.id.clone();
     {
-      self.clients.insert(key, Arc::new(Mutex::new(client)));
-      let mut client_ref = self.clients.get(&key).unwrap().lock().unwrap();
+      let mut clients_guard = self.clients.lock().expect("poison error!");
+      clients_guard.insert(key, Arc::new(Mutex::new(client)));
+      let mut client_ref = clients_guard.get(&key).unwrap().lock().unwrap();
       let mut guard = self.callbacks.lock().map_err(|_| { String::from("Failed to lock for client addition.") })?;
-      let mut send_channel = LurkSendChannel::new(&mut client_ref.stream);
-      guard.on_connect(&mut send_channel, &key);
+      let send_channel = LurkSendChannel::new(&mut client_ref.stream);
+      let mut context = ServerEventContext {
+        server: &ServerAccess { clients: self.clients.clone() },
+        write_channel: send_channel,
+        client_id: key.clone(),
+      };
+
+      guard.on_connect(&mut context);
     }
 
-    let client_ref = self.clients[&key].clone();
+    let clients_guard = self.clients.lock().expect("poison error!");
+
+    let client_ref = clients_guard[&key].clone();
     let callbacks = self.callbacks.clone();
+    let server_access = ServerAccess { clients : self.clients.clone() };
 
     thread::spawn(move || {
       let mut guard = client_ref.lock().unwrap();
-      guard.main(callbacks);
+      guard.main(callbacks, server_access );
     });
 
     Ok(())
