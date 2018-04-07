@@ -7,6 +7,7 @@ use std::net::IpAddr;
 use std::net::TcpListener;
 use std::collections::HashMap;
 use std::thread;
+use std::time;
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -22,20 +23,17 @@ impl Client {
     LurkSendChannel::new(&mut self.stream)
   }
 
-  fn main(&mut self, callbacks : Arc<Mutex<Box<ServerCallbacks + Send>>>, server_access : ServerAccess) {
-    while self.active {
-      let result = self.update(callbacks.clone(), &server_access);
-      if result.is_err() {
-        println!("Error: {}", result.unwrap_err());
-      }
-    }
-  }
-
   fn update(&mut self, callbacks : Arc<Mutex<Box<ServerCallbacks + Send>>>, server_access : &ServerAccess) -> Result<(), String> {
 
     let mut callbacks_guard = callbacks.lock().map_err(|_| { String::from("Mutex poison error.") })?;
 
-    let (kind, data) = self.pull_client_message()?;
+    let msg_result = self.pull_client_message();
+
+    if msg_result.is_err() {
+      return Ok(());
+    }
+
+    let (kind, data) = msg_result.unwrap();
     let send_channel = LurkSendChannel::new(&mut self.stream);
     //let mut context = ServerEventContext::new(server_access, send_channel, &self.id);
     let mut context = ServerEventContext {
@@ -96,10 +94,10 @@ impl Client {
     Ok(())
   }
 
-  fn pull_client_message(&mut self) -> Result<(LurkMessageKind, Vec<u8>), String> {
+  fn pull_client_message(&mut self) -> Result<(LurkMessageKind, Vec<u8>), ()> {
     let mut read_channel = LurkReadChannel::new(&mut self.stream);
 
-    fn read_fail(_ : ()) -> String { String::from("Read channel failure.") }
+    fn read_fail(_ : ()) { }
     read_channel.read_next().map_err(read_fail)
   }
 }
@@ -133,10 +131,11 @@ impl<'a> ServerEventContext<'a> {
   pub fn get_client(&self, id : &Uuid) -> Option<Arc<Mutex<Client>>> {
     let guard = self.server.clients.lock().expect("Client retrieval: poison error");
 
-    match guard.get(id) {
-      Some(s) => Some(s.clone()),
-      None => None,
+    if guard.contains_key(id) {
+      return Some(guard[id].clone());
     }
+
+    None
   }
 
   pub fn get_send_channel(&mut self) -> &mut LurkSendChannel<'a, TcpStream> {
@@ -191,7 +190,6 @@ impl Server {
         break;
       }
 
-
       match client_request {
         Ok(t) => {
           let client = Client {
@@ -200,8 +198,13 @@ impl Server {
             active : false,
           };
 
-          if self.add_client(client).is_err() {
-            println!("Failed to add client.");
+          if client.stream.set_nonblocking(true).is_err() {
+            println!("Failed to set client stream to non-blocking");
+          }
+          else {
+            if self.add_client(client).is_err() {
+              println!("Failed to add client.");
+            }
           }
         },
         Err(_) => {},
@@ -234,8 +237,22 @@ impl Server {
     let server_access = ServerAccess { clients : self.clients.clone() };
 
     thread::spawn(move || {
-      let mut guard = client_ref.lock().unwrap();
-      guard.main(callbacks, server_access );
+
+      loop {
+        let mut guard = client_ref.lock().unwrap();
+
+        if !guard.active {
+          break;
+        }
+
+        let result = guard.update(callbacks.clone(), &server_access);
+
+        if result.is_err() {
+
+        }
+
+        thread::sleep(time::Duration::from_millis(10));
+      }
     });
 
     Ok(())
