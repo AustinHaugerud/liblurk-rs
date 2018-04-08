@@ -104,4 +104,8 @@ impl ClientSession {
 
     Ok(())
   }
+
+  pub fn get_send_channel(&mut self) -> LurkSendChannel<TcpStream> {
+    LurkSendChannel::new(&mut self.stream)
+  }
 }
