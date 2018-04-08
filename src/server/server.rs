@@ -249,9 +249,11 @@ impl Server {
           println!("Locked client");
 
           if !guard.active {
+            println!("Inactive, abandon ship");
             break;
           }
 
+          println!("Updating client");
           let result = guard.update(callbacks.clone(), &server_access);
           if result.is_err() {
             println!("Error encountered.");
