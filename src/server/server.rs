@@ -27,9 +27,7 @@ impl Client {
 
     let mut callbacks_guard = callbacks.lock().map_err(|_| { String::from("Mutex poison error.") })?;
 
-    println!("Reading");
     let msg_result = self.pull_client_message();
-    println!("Finished reading.");
 
     if msg_result.is_err() {
       return Ok(());
@@ -241,29 +239,22 @@ impl Server {
     thread::spawn(move || {
 
       loop {
-        println!("Client update");
 
         // Leave this in the inner block, the mutex needs to unlock during the sleep time!
         {
           let mut guard = client_ref.lock().unwrap();
-          println!("Locked client");
 
           if !guard.active {
-            println!("Inactive, abandon ship");
             break;
           }
 
-          println!("Updating client");
           let result = guard.update(callbacks.clone(), &server_access);
           if result.is_err() {
             println!("Error encountered.");
           }
-          println!("Updated client");
         }
-        println!("Guard released, sleeping");
 
         thread::sleep(time::Duration::from_millis(10));
-        println!("Sleep ended.");
       }
     });
 
