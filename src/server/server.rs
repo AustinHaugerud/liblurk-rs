@@ -240,16 +240,18 @@ impl Server {
 
       loop {
         println!("Client update");
-        let mut guard = client_ref.lock().unwrap();
 
-        if !guard.active {
-          break;
-        }
+        // Leave this in the inner block, the mutex needs to unlock during the sleep time!
+        {
+          let mut guard = client_ref.lock().unwrap();
 
-        let result = guard.update(callbacks.clone(), &server_access);
+          if !guard.active {
+            break;
+          }
 
-        if result.is_err() {
+          let result = guard.update(callbacks.clone(), &server_access);
 
+          if result.is_err() {}
         }
 
         thread::sleep(time::Duration::from_millis(10));
