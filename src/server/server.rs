@@ -239,6 +239,7 @@ impl Server {
     thread::spawn(move || {
 
       loop {
+        println!("Client update");
         let mut guard = client_ref.lock().unwrap();
 
         if !guard.active {
