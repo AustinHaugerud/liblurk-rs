@@ -27,7 +27,9 @@ impl Client {
 
     let mut callbacks_guard = callbacks.lock().map_err(|_| { String::from("Mutex poison error.") })?;
 
+    println!("Reading");
     let msg_result = self.pull_client_message();
+    println!("Finished reading.");
 
     if msg_result.is_err() {
       return Ok(());
