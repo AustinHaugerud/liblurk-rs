@@ -197,7 +197,7 @@ impl Server {
           let client = Client {
             stream : t,
             id : Uuid::new_v4(),
-            active : false,
+            active : true,
           };
 
           if client.stream.set_nonblocking(true).is_err() {
