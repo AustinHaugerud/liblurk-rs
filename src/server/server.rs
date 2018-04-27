@@ -26,7 +26,7 @@ impl Client {
   fn data_available(&self) -> bool {
     let mut buf = [0u8];
     let peek_result = self.stream.peek(&mut buf);
-    if let Some(num_read) = peek_result {
+    if let Ok(num_read) = peek_result {
       return num_read > 0;
     }
     return false;

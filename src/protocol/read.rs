@@ -1,7 +1,6 @@
 use protocol::protocol_message::LurkMessageKind;
 use std::io::Read;
 use protocol::extraction::Extractor;
-use std::net::TcpStream;
 
 pub struct LurkReadChannel<'a, T> where &'a mut T: 'a + Read {
   read_source : &'a mut T,
