@@ -23,7 +23,21 @@ impl Client {
     LurkSendChannel::new(&mut self.stream)
   }
 
+  fn data_available(&self) -> bool {
+    let mut buf = [0u8];
+    let peek_result = self.stream.peek(&mut buf);
+    if let Some(num_read) = peek_result {
+      return num_read > 0;
+    }
+    return false;
+  }
+
   fn update(&mut self, callbacks : Arc<Mutex<Box<ServerCallbacks + Send>>>, server_access : &ServerAccess) -> Result<(), String> {
+
+    if !self.data_available() {
+      return Ok(());
+    }
+
 
     let mut callbacks_guard = callbacks.lock().map_err(|_| { String::from("Mutex poison error.") })?;
 

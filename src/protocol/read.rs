@@ -1,6 +1,7 @@
 use protocol::protocol_message::LurkMessageKind;
 use std::io::Read;
 use protocol::extraction::Extractor;
+use std::net::TcpStream;
 
 pub struct LurkReadChannel<'a, T> where &'a mut T: 'a + Read {
   read_source : &'a mut T,
@@ -76,9 +77,9 @@ mod test {
       0u8, 0u8, 0u8, 0u8
     ];
 
-    let readable = BufReader::new(data.as_slice());
+    let mut readable = BufReader::new(data.as_slice());
 
-    let mut channel = LurkReadChannel::new(readable);
+    let mut channel = LurkReadChannel::new(&mut readable);
 
     let result = channel.read_next();
 
@@ -97,9 +98,9 @@ mod test {
       0u8, 0u8
     ];
 
-    let readable = BufReader::new(data.as_slice());
+    let mut readable = BufReader::new(data.as_slice());
 
-    let mut channel = LurkReadChannel::new(readable);
+    let mut channel = LurkReadChannel::new(&mut readable);
 
     let result = channel.read_next();
 
@@ -115,9 +116,9 @@ mod test {
   fn test_fight_pull() {
     let data = vec![Fight::message_type()];
 
-    let readable = BufReader::new(data.as_slice());
+    let mut readable = BufReader::new(data.as_slice());
 
-    let mut channel = LurkReadChannel::new(readable);
+    let mut channel = LurkReadChannel::new(&mut readable);
 
     let result = channel.read_next();
 
@@ -139,9 +140,9 @@ mod test {
       0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
     ];
 
-    let readable = BufReader::new(data.as_slice());
+    let mut readable = BufReader::new(data.as_slice());
 
-    let mut channel = LurkReadChannel::new(readable);
+    let mut channel = LurkReadChannel::new(&mut readable);
 
     let result = channel.read_next();
 
@@ -163,9 +164,9 @@ mod test {
       0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
     ];
 
-    let readable = BufReader::new(data.as_slice());
+    let mut readable = BufReader::new(data.as_slice());
 
-    let mut channel = LurkReadChannel::new(readable);
+    let mut channel = LurkReadChannel::new(&mut readable);
 
     let result = channel.read_next();
 
@@ -181,9 +182,9 @@ mod test {
   fn test_start_pull() {
     let data = vec![Start::message_type()];
 
-    let readable = BufReader::new(data.as_slice());
+    let mut readable = BufReader::new(data.as_slice());
 
-    let mut channel = LurkReadChannel::new(readable);
+    let mut channel = LurkReadChannel::new(&mut readable);
 
     let result = channel.read_next();
 
@@ -207,9 +208,9 @@ mod test {
       0u8, 0u8, 0u8, 0u8
     ];
 
-    let readable = BufReader::new(data.as_slice());
+    let mut readable = BufReader::new(data.as_slice());
 
-    let mut channel = LurkReadChannel::new(readable);
+    let mut channel = LurkReadChannel::new(&mut readable);
 
     let result = channel.read_next();
 
@@ -225,9 +226,9 @@ mod test {
   fn test_accept_pull() {
     let data = vec![Accept::message_type(), 0u8];
 
-    let readable = BufReader::new(data.as_slice());
+    let mut readable = BufReader::new(data.as_slice());
 
-    let mut channel = LurkReadChannel::new(readable);
+    let mut channel = LurkReadChannel::new(&mut readable);
 
     let result = channel.read_next();
 
@@ -255,9 +256,9 @@ mod test {
       0u8, 0u8, 0u8, 0u8
     ];
 
-    let readable = BufReader::new(data.as_slice());
+    let mut readable = BufReader::new(data.as_slice());
 
-    let mut channel = LurkReadChannel::new(readable);
+    let mut channel = LurkReadChannel::new(&mut readable);
 
     let result = channel.read_next();
 
@@ -292,9 +293,9 @@ mod test {
       0u8, 0u8, 0u8, 0u8
     ];
 
-    let readable = BufReader::new(data.as_slice());
+    let mut readable = BufReader::new(data.as_slice());
 
-    let mut channel = LurkReadChannel::new(readable);
+    let mut channel = LurkReadChannel::new(&mut readable);
 
     let result = channel.read_next();
 
@@ -318,9 +319,9 @@ mod test {
       0u8, 0u8, 0u8, 0u8
     ];
 
-    let readable = BufReader::new(data.as_slice());
+    let mut readable = BufReader::new(data.as_slice());
 
-    let mut channel = LurkReadChannel::new(readable);
+    let mut channel = LurkReadChannel::new(&mut readable);
 
     let result = channel.read_next();
 
@@ -336,9 +337,9 @@ mod test {
   fn test_leave_pull() {
     let data = vec![Leave::message_type()];
 
-    let readable = BufReader::new(data.as_slice());
+    let mut readable = BufReader::new(data.as_slice());
 
-    let mut channel = LurkReadChannel::new(readable);
+    let mut channel = LurkReadChannel::new(&mut readable);
 
     let result = channel.read_next();
 
@@ -366,9 +367,9 @@ mod test {
       0u8, 0u8, 0u8, 0u8
     ];
 
-    let readable = BufReader::new(data.as_slice());
+    let mut readable = BufReader::new(data.as_slice());
 
-    let mut channel = LurkReadChannel::new(readable);
+    let mut channel = LurkReadChannel::new(&mut readable);
 
     let result = channel.read_next();
 
