@@ -348,6 +348,17 @@ impl LurkMessageType for Start {
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+
+pub const ERROR_TYPE_OTHER : u8 = 0;
+pub const ERROR_TYPE_BAD_ROOM : u8 = 1;
+pub const ERROR_TYPE_PLAYER_EXISTS : u8 = 2;
+pub const ERROR_TYPE_BAD_MONSTER : u8 = 3;
+pub const ERROR_TYPE_STAT_ERROR : u8 = 4;
+pub const ERROR_TYPE_NOT_READY : u8 = 5;
+pub const ERROR_TYPE_NO_TARGET : u8 = 6;
+pub const ERROR_TYPE_NO_FIGHT : u8 = 7;
+pub const ERROR_TYPE_NO_PVP : u8 = 8;
+
 pub struct Error {
   pub error_code: u8,
   pub error_message: String,
@@ -360,6 +371,42 @@ impl Error {
     }
 
     Err(())
+  }
+
+  pub fn other(error_message : String) -> Result<Error, ()> {
+    Error::new(ERROR_TYPE_OTHER, error_message)
+  }
+
+  pub fn bad_room(error_message : String) -> Result<Error, ()> {
+    Error::new(ERROR_TYPE_BAD_ROOM, error_message)
+  }
+
+  pub fn player_exists(error_message : String) -> Result<Error, ()> {
+    Error::new(ERROR_TYPE_PLAYER_EXISTS, error_message)
+  }
+
+  pub fn bad_monster(error_message : String) -> Result<Error, ()> {
+    Error::new(ERROR_TYPE_BAD_MONSTER, error_message)
+  }
+
+  pub fn stat_error(error_message : String) -> Result<Error, ()> {
+    Error::new(ERROR_TYPE_STAT_ERROR, error_message)
+  }
+
+  pub fn not_ready(error_message : String) -> Result<Error, ()> {
+    Error::new(ERROR_TYPE_NOT_READY, error_message)
+  }
+
+  pub fn no_target(error_message : String) -> Result<Error, ()> {
+    Error::new(ERROR_TYPE_NO_TARGET, error_message)
+  }
+
+  pub fn no_fight(error_message : String) -> Result<Error, ()> {
+    Error::new(ERROR_TYPE_NO_FIGHT, error_message)
+  }
+
+  pub fn no_pvp(error_message : String) -> Result<Error, ()> {
+    Error::new(ERROR_TYPE_NO_PVP, error_message)
   }
 }
 
