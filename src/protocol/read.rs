@@ -45,6 +45,7 @@ where
         let data_result = extractor.extract(&mut self.read_source);
 
         if data_result.is_err() {
+            println!("Data result error! {}", data_result.err().unwrap());
             return Err(());
         }
 
