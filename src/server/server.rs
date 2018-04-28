@@ -49,7 +49,7 @@ impl Client {
         let msg_result = self.pull_client_message();
 
         if msg_result.is_err() {
-            return Ok(());
+            return Err("Failed to pull client message.".to_string());
         }
 
         let (kind, data) = msg_result.unwrap();
