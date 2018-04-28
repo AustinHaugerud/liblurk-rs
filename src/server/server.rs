@@ -38,6 +38,8 @@ impl Client {
       return Ok(());
     }
 
+    println!("Data available");
+
 
     let mut callbacks_guard = callbacks.lock().map_err(|_| { String::from("Mutex poison error.") })?;
 
