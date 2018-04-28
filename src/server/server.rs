@@ -40,8 +40,6 @@ impl Client {
             return Ok(());
         }
 
-        println!("Data available");
-
         let mut callbacks_guard = callbacks
             .lock()
             .map_err(|_| String::from("Mutex poison error."))?;
@@ -53,7 +51,6 @@ impl Client {
         }
 
         let (kind, data) = msg_result.unwrap();
-        println!("Message type was {:?}", kind);
         let send_channel = LurkSendChannel::new(&mut self.stream);
         //let mut context = ServerEventContext::new(server_access, send_channel, &self.id);
         let mut context = ServerEventContext {
@@ -275,7 +272,7 @@ impl Server {
 
                     let result = guard.update(callbacks.clone(), &server_access);
                     if result.is_err() {
-                        println!("Error encountered.");
+                        println!("Error encountered: {}", result.err().unwrap());
                     }
                 }
 

@@ -20,11 +20,8 @@ where
     }
 
     pub fn read_next(&mut self) -> Result<(LurkMessageKind, Vec<u8>), ()> {
-        println!("Read next call!");
         let type_byte = self.read_type_byte()?;
-        println!("Got type byte {}", type_byte);
         let message_kind = LurkMessageKind::from_code(type_byte)?;
-        println!("Which is of type {:?}", message_kind);
 
         let extractor = match message_kind {
             LurkMessageKind::Message => Extractor::message(),
