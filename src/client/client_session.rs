@@ -59,7 +59,7 @@ impl ClientSession {
                 ChangeRoom::parse_lurk_message(data.as_slice())?;
             }
             LurkMessageKind::Fight => {
-                Fight::parse_lurk_message((data.as_slice()))?;
+                Fight::parse_lurk_message(data.as_slice())?;
             }
             LurkMessageKind::PvPFight => {
                 PvpFight::parse_lurk_message(data.as_slice())?;

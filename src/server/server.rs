@@ -53,7 +53,7 @@ impl Client {
         }
 
         let (kind, data) = msg_result.unwrap();
-        println!("Message type was {}", kind);
+        println!("Message type was {:?}", kind);
         let send_channel = LurkSendChannel::new(&mut self.stream);
         //let mut context = ServerEventContext::new(server_access, send_channel, &self.id);
         let mut context = ServerEventContext {
