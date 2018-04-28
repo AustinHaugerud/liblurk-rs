@@ -220,8 +220,9 @@ impl Server {
                         active: true,
                     };
 
-                    if client.stream.set_nonblocking(true).is_err() {
-                        println!("Failed to set client stream to non-blocking");
+                    // Non-blocking disabled currently, instead we just peek to see if data is available per loop iteration
+                    if client.stream.set_nonblocking(false).is_err() {
+                        println!("Failed to set client stream to blocking");
                     } else {
                         if self.add_client(client).is_err() {
                             println!("Failed to add client.");
