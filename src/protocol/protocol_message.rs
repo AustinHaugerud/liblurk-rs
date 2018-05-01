@@ -1055,7 +1055,7 @@ mod tests {
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         ];
 
-        let (message, bytes_read) = PvpFight::parse_lurk_message(data.as_slice()).unwrap();
+        let (message, _) = PvpFight::parse_lurk_message(data.as_slice()).unwrap();
 
         assert_eq!(message.target, String::from("targ"));
     }

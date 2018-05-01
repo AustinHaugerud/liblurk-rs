@@ -11,10 +11,17 @@ use std::time;
 use std::sync::Arc;
 use std::sync::Mutex;
 
+#[derive(Eq, PartialEq)]
+enum ClientHealthState {
+    Good,
+    Bad,
+}
+
 pub struct Client {
     stream: TcpStream,
     id: Uuid,
     active: bool,
+    health_state: ClientHealthState,
 }
 
 impl Client {
@@ -44,15 +51,10 @@ impl Client {
             .lock()
             .map_err(|_| String::from("Mutex poison error."))?;
 
-        let msg_result = self.pull_client_message();
+        let (kind, data) = self.pull_client_message()
+            .map_err(|_| String::from("Failed to pull client message"))?;
 
-        if msg_result.is_err() {
-            return Err("Failed to pull client message.".to_string());
-        }
-
-        let (kind, data) = msg_result.unwrap();
         let send_channel = LurkSendChannel::new(&mut self.stream);
-        //let mut context = ServerEventContext::new(server_access, send_channel, &self.id);
         let mut context = ServerEventContext {
             server: server_access,
             write_channel: send_channel,
@@ -144,17 +146,14 @@ pub struct ServerEventContext<'a> {
 }
 
 impl<'a> ServerEventContext<'a> {
-    pub fn get_client(&self, id: &Uuid) -> Option<Arc<Mutex<Client>>> {
-        let guard = self.server
-            .clients
-            .lock()
-            .expect("Client retrieval: poison error");
-
-        if guard.contains_key(id) {
-            return Some(guard[id].clone());
+    pub fn get_client(&self, id: &Uuid) -> Result<Option<Arc<Mutex<Client>>>, ()> {
+        match self.server.clients.lock() {
+            Ok(guard) => match guard.contains_key(id) {
+                true => Ok(Some(guard[id].clone())),
+                false => Ok(None),
+            },
+            Err(_) => Err(()),
         }
-
-        None
     }
 
     pub fn get_send_channel(&mut self) -> &mut LurkSendChannel<'a, TcpStream> {
@@ -186,17 +185,13 @@ impl Server {
         })
     }
 
-    pub fn start(&mut self) -> bool {
-        let listener_result = TcpListener::bind(self.server_address);
-
-        if listener_result.is_err() {
-            return false;
-        }
+    pub fn start(&mut self) -> Result<(), ()> {
+        let listener = TcpListener::bind(self.server_address).map_err(|_| ())?;
 
         self.running = true;
-        self.main(listener_result.unwrap());
+        self.main(listener);
 
-        return true;
+        Ok(())
     }
 
     pub fn stop(&mut self) {
@@ -215,6 +210,7 @@ impl Server {
                         stream: t,
                         id: Uuid::new_v4(),
                         active: true,
+                        health_state: ClientHealthState::Good,
                     };
 
                     // Non-blocking disabled currently, instead we just peek to see if data is available per loop iteration
@@ -234,13 +230,24 @@ impl Server {
     fn add_client(&mut self, client: Client) -> Result<(), String> {
         let key = client.id.clone();
         {
-            let mut clients_guard = self.clients.lock().expect("poison error!");
+            let mut clients_guard = self.clients
+                .lock()
+                .map_err(|_| String::from("Poison error!"))?;
+
             clients_guard.insert(key, Arc::new(Mutex::new(client)));
-            let mut client_ref = clients_guard.get(&key).unwrap().lock().unwrap();
+
+            let mut client_ref = clients_guard
+                .get(&key)
+                .unwrap()
+                .lock()
+                .map_err(|_| String::from("Poison error!"))?;
+
             let mut guard = self.callbacks
                 .lock()
                 .map_err(|_| String::from("Failed to lock for client addition."))?;
+
             let send_channel = LurkSendChannel::new(&mut client_ref.stream);
+
             let mut context = ServerEventContext {
                 server: &ServerAccess {
                     clients: self.clients.clone(),
@@ -252,9 +259,10 @@ impl Server {
             guard.on_connect(&mut context);
         }
 
-        let clients_guard = self.clients.lock().expect("poison error!");
+        let clients_guard = self.clients.lock().map_err(|_| String::from("Poison error!"))?;
 
         let client_ref = clients_guard[&key].clone();
+        let client_id = Arc::new(key.clone());
         let callbacks = self.callbacks.clone();
         let server_access = ServerAccess {
             clients: self.clients.clone(),
@@ -264,16 +272,31 @@ impl Server {
             loop {
                 // Leave this in the inner block, the mutex needs to unlock during the sleep time!
                 {
-                    let mut guard = client_ref.lock().unwrap();
+                    match client_ref.lock() {
+                        Ok(mut guard) => {
+                            if guard.health_state == ClientHealthState::Bad {
+                                guard.active = false;
+                            }
+                            if !guard.active {
+                                break;
+                            }
 
-                    if !guard.active {
-                        break;
-                    }
+                            match guard.update(callbacks.clone(), &server_access) {
+                                Ok(_) => {}
+                                Err(e) => println!("Error encountered: {}", e),
+                            };
+                        }
 
-                    let result = guard.update(callbacks.clone(), &server_access);
-                    if result.is_err() {
-                        println!("Error encountered: {}", result.err().unwrap());
-                    }
+                        Err(_) => match server_access.clients.lock() {
+                            Ok(mut clients_guard) => {
+                                clients_guard.remove(&client_id);
+                            }
+                            Err(_) => {
+                                println!("Critical Error: Main server thread corrupted.");
+                                panic!("Critical Error: Main server thread corrupted.");
+                            }
+                        },
+                    };
                 }
 
                 thread::sleep(time::Duration::from_millis(10));

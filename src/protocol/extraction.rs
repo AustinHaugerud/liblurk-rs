@@ -164,12 +164,6 @@ mod test {
 
     use super::*;
     use std::io::BufReader;
-    use std::io::Read;
-
-    struct MockReadable {
-        data: Vec<u8>,
-        pos: usize,
-    }
 
     #[test]
     fn test_byte_chunk_extraction() {
