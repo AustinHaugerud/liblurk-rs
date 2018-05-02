@@ -232,6 +232,10 @@ impl<'a> ServerEventContext<'a> {
             }
         };
     }
+
+    pub fn enqueue_message_this(&mut self, message : T) where T: 'static + LurkMessageBlobify + Send {
+        self.enqueue_message(message, self.client_id.clone())
+    }
 }
 
 pub struct Server {
