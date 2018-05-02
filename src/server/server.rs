@@ -322,7 +322,7 @@ impl Server {
 
                 thread::sleep(time::Duration::from_millis(10));
             }
-            server_access.clients.lock().unwrap().remove(&client_id);
+            server_access.clients.lock().expect("Critical Error: Main server thread corrupted.").remove(&client_id);
         });
 
         Ok(())
