@@ -34,4 +34,9 @@ where
         }
         Ok(())
     }
+
+    pub fn write_message_uptr(&mut self, message : &Box<LurkMessageBlobify + Send>)  -> Result<(), ()> {
+        let mut data = message.produce_lurk_message_blob();
+        self.target.write_all(&mut data).map_err(|_| ())
+    }
 }
