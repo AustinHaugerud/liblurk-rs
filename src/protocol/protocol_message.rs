@@ -73,6 +73,7 @@ pub trait LurkMessageType {
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+#[derive(Copy, Clone)]
 pub struct Message {
     pub message: String,
     pub sender: String,
