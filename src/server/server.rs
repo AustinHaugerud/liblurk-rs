@@ -258,25 +258,46 @@ impl Server {
                     if client.stream.set_nonblocking(false).is_err() {
                         println!("Failed to set client stream to blocking");
                     } else {
-                        if self.add_client(client).is_err() {
-                            println!("Failed to add client.");
-                            client.health_state = ClientHealthState::Bad;
-                        }
+                        let id = client.id.clone();
+                        match self.add_client(client) {
+                            Ok(_) => {},
+                            Err(e) => {
+                                client.health_state = ClientHealthState::Bad;
+                                println!("Failed to add client: {}", e);
+                                match self.remove_client(&id) {
+                                    Ok(_) => {},
+                                    Err(_) => { println!("Failed to drop bad client addition."); }
+                                }
+                            },
+                        };
                     }
                 }
-                Err(_) => {}
+                Err(e) => {
+                    println!("Error accepting incoming connection: {}", e);
+                }
             };
         }
     }
 
+    fn remove_client(&mut self, id : &Uuid) -> Result<(), String> {
+        let mut clients_guard = self.clients.lock().map_err(|_| String::from("Poison error!"))?;
+        clients_guard.remove(&id);
+        Ok(())
+    }
+
     fn add_client(&mut self, client: Client) -> Result<(), String> {
+        println!("Adding client");
         let key = client.id.clone();
         {
             let mut clients_guard = self.clients
                 .lock()
                 .map_err(|_| String::from("Poison error!"))?;
 
+            println!("Got clients lock");
+
             clients_guard.insert(key, Arc::new(Mutex::new(client)));
+
+            println!("Inserted client.");
 
             let mut client_ref = clients_guard
                 .get(&key)
@@ -284,11 +305,17 @@ impl Server {
                 .lock()
                 .map_err(|_| String::from("Poison error!"))?;
 
+            println!("Got client lock");
+
             let mut guard = self.callbacks
                 .lock()
                 .map_err(|_| String::from("Failed to lock for client addition."))?;
 
+            println!("Got callbacks lock");
+
             let send_channel = LurkSendChannel::new(&mut client_ref.stream);
+
+            println!("Got send channel");
 
             let mut context = ServerEventContext {
                 server: &ServerAccess {
@@ -298,14 +325,19 @@ impl Server {
                 client_id: key.clone(),
             };
 
+            println!("Created context.");
+
             guard
                 .on_connect(&mut context)
                 .map_err(|_| String::from("On connect callback error"))?;
+            println!("Fired on connect callback");
         }
 
         let clients_guard = self.clients
             .lock()
             .map_err(|_| String::from("Poison error!"))?;
+
+        println!("2- Got clients lock.");
 
         let client_ref = clients_guard[&key].clone();
         let client_id = Arc::new(key.clone());
