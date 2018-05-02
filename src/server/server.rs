@@ -214,9 +214,9 @@ impl<'a> ServerEventContext<'a> {
         }
     }
 
-    pub fn get_send_channel(&mut self) -> &mut LurkSendChannel<'a, TcpStream> {
+    /*pub fn get_send_channel(&mut self) -> &mut LurkSendChannel<'a, TcpStream> {
         &mut self.write_channel
-    }
+    }*/
 
     pub fn get_client_id(&self) -> Uuid {
         self.client_id.clone()
