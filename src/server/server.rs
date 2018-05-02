@@ -144,7 +144,7 @@ impl Client {
     }
 }
 
-type LurkServerError = Result<(), ()>;
+pub type LurkServerError = Result<(), ()>;
 
 pub trait ServerCallbacks {
     fn on_connect(&mut self, context: &mut ServerEventContext) -> LurkServerError;
