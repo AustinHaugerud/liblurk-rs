@@ -16,6 +16,7 @@ use std::sync::Mutex;
 enum ClientHealthState {
     Good,
     Bad,
+    Close,
 }
 
 pub struct Client {
@@ -39,13 +40,22 @@ impl Client {
         return false;
     }
 
+    fn socket_open(&self) -> bool {
+        let mut buf = [0u8];
+        return self.stream.peek(&mut buf).is_ok();
+    }
+
     fn update(
         &mut self,
         callbacks: Arc<Mutex<Box<ServerCallbacks + Send>>>,
         server_access: &ServerAccess,
-    ) -> Result<(), String> {
+    ) -> Result<bool, String> {
+        if !self.socket_open() {
+            return Ok(false);
+        }
+
         if !self.data_available() {
-            return Ok(());
+            return Ok(true);
         }
 
         let mut callbacks_guard = callbacks
@@ -133,7 +143,7 @@ impl Client {
             }
         };
 
-        Ok(())
+        Ok(true)
     }
 
     fn pull_client_message(&mut self) -> Result<(LurkMessageKind, Vec<u8>), ()> {
@@ -260,15 +270,17 @@ impl Server {
                     } else {
                         let id = client.id.clone();
                         match self.add_client(client) {
-                            Ok(_) => {},
+                            Ok(_) => {}
                             Err(e) => {
                                 client.health_state = ClientHealthState::Bad;
                                 println!("Failed to add client: {}", e);
                                 match self.remove_client(&id) {
-                                    Ok(_) => {},
-                                    Err(_) => { println!("Failed to drop bad client addition."); }
+                                    Ok(_) => {}
+                                    Err(_) => {
+                                        println!("Failed to drop bad client addition.");
+                                    }
                                 }
-                            },
+                            }
                         };
                     }
                 }
@@ -279,8 +291,10 @@ impl Server {
         }
     }
 
-    fn remove_client(&mut self, id : &Uuid) -> Result<(), String> {
-        let mut clients_guard = self.clients.lock().map_err(|_| String::from("Poison error!"))?;
+    fn remove_client(&mut self, id: &Uuid) -> Result<(), String> {
+        let mut clients_guard = self.clients
+            .lock()
+            .map_err(|_| String::from("Poison error!"))?;
         clients_guard.remove(&id);
         Ok(())
     }
@@ -336,15 +350,23 @@ impl Server {
                 {
                     match client_ref.lock() {
                         Ok(mut guard) => {
-                            if guard.health_state == ClientHealthState::Bad {
+                            if guard.health_state == ClientHealthState::Bad
+                                || guard.health_state == ClientHealthState::Close
+                            {
                                 guard.active = false;
                             }
+
                             if !guard.active {
                                 break;
                             }
 
                             match guard.update(callbacks.clone(), &server_access) {
-                                Ok(_) => {}
+                                Ok(continue_status) => {
+                                    if !continue_status {
+                                        guard.health_state = ClientHealthState::Close;
+                                        println!("Client {} disconnected.", guard.id);
+                                    }
+                                }
                                 Err(e) => {
                                     println!("Error encountered: {}", e);
                                     match guard.get_send_channel().write_message(
