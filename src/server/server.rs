@@ -65,27 +65,45 @@ impl Client {
         match kind {
             LurkMessageKind::Message => {
                 let (message, _) = Message::parse_lurk_message(data.as_slice())?;
-                callbacks_guard.on_message(&mut context, &message);
+                match callbacks_guard.on_message(&mut context, &message) {
+                    Err(_) => self.health_state = ClientHealthState::Bad,
+                    _ => {}
+                }
             }
             LurkMessageKind::ChangeRoom => {
                 let (message, _) = ChangeRoom::parse_lurk_message(data.as_slice())?;
-                callbacks_guard.on_change_room(&mut context, &message);
+                match callbacks_guard.on_change_room(&mut context, &message) {
+                    Err(_) => self.health_state = ClientHealthState::Bad,
+                    _ => {}
+                }
             }
             LurkMessageKind::Fight => {
                 let (message, _) = Fight::parse_lurk_message(data.as_slice())?;
-                callbacks_guard.on_fight(&mut context, &message);
+                match callbacks_guard.on_fight(&mut context, &message) {
+                    Err(_) => self.health_state = ClientHealthState::Bad,
+                    _ => {}
+                }
             }
             LurkMessageKind::PvPFight => {
                 let (message, _) = PvpFight::parse_lurk_message(data.as_slice())?;
-                callbacks_guard.on_pvp_fight(&mut context, &message);
+                match callbacks_guard.on_pvp_fight(&mut context, &message) {
+                    Err(_) => self.health_state = ClientHealthState::Bad,
+                    _ => {}
+                }
             }
             LurkMessageKind::Loot => {
                 let (message, _) = Loot::parse_lurk_message(data.as_slice())?;
-                callbacks_guard.on_loot(&mut context, &message);
+                match callbacks_guard.on_loot(&mut context, &message) {
+                    Err(_) => self.health_state = ClientHealthState::Bad,
+                    _ => {}
+                }
             }
             LurkMessageKind::Start => {
                 let (message, _) = Start::parse_lurk_message(data.as_slice())?;
-                callbacks_guard.on_start(&mut context, &message);
+                match callbacks_guard.on_start(&mut context, &message) {
+                    Err(_) => self.health_state = ClientHealthState::Bad,
+                    _ => {}
+                }
             }
             LurkMessageKind::Error => {
                 Error::parse_lurk_message(data.as_slice())?;
@@ -98,14 +116,18 @@ impl Client {
             }
             LurkMessageKind::Character => {
                 let (message, _) = Character::parse_lurk_message(data.as_slice())?;
-                callbacks_guard.on_character(&mut context, &message);
+                match callbacks_guard.on_character(&mut context, &message) {
+                    Err(_) => self.health_state = ClientHealthState::Bad,
+                    _ => {}
+                }
             }
             LurkMessageKind::Game => {
                 Game::parse_lurk_message(data.as_slice())?;
             }
-            LurkMessageKind::Leave => {
-                callbacks_guard.on_leave(&self.id);
-            }
+            LurkMessageKind::Leave => match callbacks_guard.on_leave(&self.id) {
+                Err(_) => self.health_state = ClientHealthState::Bad,
+                _ => {}
+            },
             LurkMessageKind::Connection => {
                 Connection::parse_lurk_message(data.as_slice())?;
             }
@@ -122,18 +144,36 @@ impl Client {
     }
 }
 
+type LurkServerError = Result<(), ()>;
+
 pub trait ServerCallbacks {
-    fn on_connect(&mut self, context: &mut ServerEventContext);
+    fn on_connect(&mut self, context: &mut ServerEventContext) -> LurkServerError;
     fn on_disconnect(&mut self, client_id: &Uuid);
 
-    fn on_message(&mut self, context: &mut ServerEventContext, message: &Message);
-    fn on_change_room(&mut self, context: &mut ServerEventContext, change_room: &ChangeRoom);
-    fn on_fight(&mut self, context: &mut ServerEventContext, fight: &Fight);
-    fn on_pvp_fight(&mut self, context: &mut ServerEventContext, pvp_fight: &PvpFight);
-    fn on_loot(&mut self, context: &mut ServerEventContext, loot: &Loot);
-    fn on_start(&mut self, context: &mut ServerEventContext, start: &Start);
-    fn on_character(&mut self, context: &mut ServerEventContext, character: &Character);
-    fn on_leave(&mut self, client_id: &Uuid);
+    fn on_message(
+        &mut self,
+        context: &mut ServerEventContext,
+        message: &Message,
+    ) -> LurkServerError;
+    fn on_change_room(
+        &mut self,
+        context: &mut ServerEventContext,
+        change_room: &ChangeRoom,
+    ) -> LurkServerError;
+    fn on_fight(&mut self, context: &mut ServerEventContext, fight: &Fight) -> LurkServerError;
+    fn on_pvp_fight(
+        &mut self,
+        context: &mut ServerEventContext,
+        pvp_fight: &PvpFight,
+    ) -> LurkServerError;
+    fn on_loot(&mut self, context: &mut ServerEventContext, loot: &Loot) -> LurkServerError;
+    fn on_start(&mut self, context: &mut ServerEventContext, start: &Start) -> LurkServerError;
+    fn on_character(
+        &mut self,
+        context: &mut ServerEventContext,
+        character: &Character,
+    ) -> LurkServerError;
+    fn on_leave(&mut self, client_id: &Uuid) -> LurkServerError;
 }
 
 pub struct ServerAccess {
@@ -207,7 +247,7 @@ impl Server {
 
             match client_request {
                 Ok(t) => {
-                    let client = Client {
+                    let mut client = Client {
                         stream: t,
                         id: Uuid::new_v4(),
                         active: true,
@@ -220,6 +260,7 @@ impl Server {
                     } else {
                         if self.add_client(client).is_err() {
                             println!("Failed to add client.");
+                            client.health_state = ClientHealthState::Bad;
                         }
                     }
                 }
@@ -257,7 +298,9 @@ impl Server {
                 client_id: key.clone(),
             };
 
-            guard.on_connect(&mut context);
+            guard
+                .on_connect(&mut context)
+                .map_err(|_| String::from("On connect callback error"))?;
         }
 
         let clients_guard = self.clients
@@ -322,7 +365,11 @@ impl Server {
 
                 thread::sleep(time::Duration::from_millis(10));
             }
-            server_access.clients.lock().expect("Critical Error: Main server thread corrupted.").remove(&client_id);
+            server_access
+                .clients
+                .lock()
+                .expect("Critical Error: Main server thread corrupted.")
+                .remove(&client_id);
         });
 
         Ok(())
