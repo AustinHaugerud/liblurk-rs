@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::thread;
 use std::time;
 use std::sync::Arc;
-use std::sync::{Mutex};
+use std::sync::Mutex;
 use std::collections::VecDeque;
 
 #[derive(Eq, PartialEq)]
@@ -21,15 +21,18 @@ enum ClientHealthState {
 }
 
 struct WriteQueueItem {
-    packet : Box<LurkMessageBlobify + Send>,
-    target : Uuid,
+    packet: Box<LurkMessageBlobify + Send>,
+    target: Uuid,
 }
 
 impl WriteQueueItem {
-    pub fn new<T>(packet_impl : T, target : Uuid) -> WriteQueueItem where T: 'static + LurkMessageBlobify + Send {
+    pub fn new<T>(packet_impl: T, target: Uuid) -> WriteQueueItem
+    where
+        T: 'static + LurkMessageBlobify + Send,
+    {
         WriteQueueItem {
-            packet : Box::new(packet_impl),
-            target
+            packet: Box::new(packet_impl),
+            target,
         }
     }
 }
@@ -194,7 +197,7 @@ pub trait ServerCallbacks {
 
 pub struct ServerAccess {
     clients: Arc<Mutex<HashMap<Uuid, Arc<Mutex<Client>>>>>,
-    write_items_queue : Arc<Mutex<VecDeque<WriteQueueItem>>>,
+    write_items_queue: Arc<Mutex<VecDeque<WriteQueueItem>>>,
 }
 
 pub struct ServerEventContext<'a> {
@@ -222,18 +225,24 @@ impl<'a> ServerEventContext<'a> {
         self.client_id.clone()
     }
 
-    pub fn enqueue_message<T>(&mut self, message : T, target : Uuid) where T: 'static + LurkMessageBlobify + Send {
+    pub fn enqueue_message<T>(&mut self, message: T, target: Uuid)
+    where
+        T: 'static + LurkMessageBlobify + Send,
+    {
         match self.server.write_items_queue.lock() {
             Ok(mut queue) => {
                 queue.push_back(WriteQueueItem::new(message, target));
-            },
+            }
             Err(_) => {
                 println!("Could not enqueue message.");
             }
         };
     }
 
-    pub fn enqueue_message_this<T>(&mut self, message : T) where T: 'static + LurkMessageBlobify + Send {
+    pub fn enqueue_message_this<T>(&mut self, message: T)
+    where
+        T: 'static + LurkMessageBlobify + Send,
+    {
         let id = self.client_id.clone();
         self.enqueue_message(message, id)
     }
@@ -244,7 +253,7 @@ pub struct Server {
     callbacks: Arc<Mutex<Box<ServerCallbacks + Send>>>,
     running: Arc<Mutex<bool>>,
     server_address: (IpAddr, u16),
-    write_items_queue : Arc<Mutex<VecDeque<WriteQueueItem>>>,
+    write_items_queue: Arc<Mutex<VecDeque<WriteQueueItem>>>,
 }
 
 impl Server {
@@ -257,7 +266,7 @@ impl Server {
             callbacks: Arc::new(Mutex::new(behavior)),
             running: Arc::new(Mutex::new(false)),
             server_address: (host, port),
-            write_items_queue : Arc::new(Mutex::new(VecDeque::new())),
+            write_items_queue: Arc::new(Mutex::new(VecDeque::new())),
         })
     }
 
@@ -290,7 +299,7 @@ impl Server {
         }
     }
 
-    fn get_client_mut(&mut self, id : &Uuid) -> Result<Option<Arc<Mutex<Client>>>, ()> {
+    fn get_client_mut(&mut self, id: &Uuid) -> Result<Option<Arc<Mutex<Client>>>, ()> {
         match self.clients.lock() {
             Ok(clients) => match clients.contains_key(id) {
                 true => Ok(Some(clients[id].clone())),
@@ -301,73 +310,69 @@ impl Server {
     }
 
     fn main(&mut self, listener: TcpListener) {
-
         let clients = self.clients.clone();
         let write_items_queue = self.write_items_queue.clone();
         let running = self.running.clone();
 
         // Process clients write queue
-        thread::spawn(move || {
-            loop {
-
-                match running.lock() {
-                    Ok(status) => {
-                        if *status == false {
-                            break;
-                        }
-                    }
-                    Err(_) => {
-                        println!("Critical: Failed to check server running status during queue processing.");
+        thread::spawn(move || loop {
+            match running.lock() {
+                Ok(status) => {
+                    if *status == false {
                         break;
                     }
-                };
+                }
+                Err(_) => {
+                    println!(
+                        "Critical: Failed to check server running status during queue processing."
+                    );
+                    break;
+                }
+            };
 
-                match clients.lock() {
-                    Ok(mut clients) => {
-                        match write_items_queue.lock() {
-                            Ok(queue) => {
-                                for item in queue.iter() {
-                                    if let Some(clientg) = clients.get_mut(&item.target) {
-                                        match clientg.lock() {
-                                            Ok(mut client) => {
-                                                match client.get_send_channel().write_message_uptr(&item.packet) {
-                                                    Ok(_) => {},
-                                                    Err(_) => {
-                                                        println!("Failed to write to client.");
-                                                        client.health_state = ClientHealthState::Bad;
-                                                    }
-                                                }
-                                            }
-                                            Err(_) => {
-                                                println!("Failed to lock onto client for queue processing..")
-                                            }
+            match clients.lock() {
+                Ok(mut clients) => match write_items_queue.lock() {
+                    Ok(mut queue) => {
+                        for item in queue.iter() {
+                            if let Some(clientg) = clients.get_mut(&item.target) {
+                                match clientg.lock() {
+                                    Ok(mut client) => match client
+                                        .get_send_channel()
+                                        .write_message_uptr(&item.packet)
+                                    {
+                                        Ok(_) => {}
+                                        Err(_) => {
+                                            println!("Failed to write to client.");
+                                            client.health_state = ClientHealthState::Bad;
                                         }
-                                    } else {
-                                        println!("Invalid target in queue processing.");
-                                    }
+                                    },
+                                    Err(_) => println!(
+                                        "Failed to lock onto client for queue processing.."
+                                    ),
                                 }
-
-                            },
-                            Err(_) => {
-                                println!("Failed to lock and process write queue.");
+                            } else {
+                                println!("Invalid target in queue processing.");
                             }
                         }
+                        queue.clear();
                     }
                     Err(_) => {
-                        println!("Failed lock clients for write queue processing.");
+                        println!("Failed to lock and process write queue.");
                     }
+                },
+                Err(_) => {
+                    println!("Failed lock clients for write queue processing.");
                 }
             }
         });
 
         for client_request in listener.incoming() {
-
             match self.running.lock() {
                 Ok(status) => {
                     if *status == false {
                         break;
                     }
-                },
+                }
                 Err(_) => {
                     println!("Critical: Failed to get server running status during listening.");
                     break;
@@ -462,7 +467,7 @@ impl Server {
         let callbacks = self.callbacks.clone();
         let server_access = ServerAccess {
             clients: self.clients.clone(),
-            write_items_queue : self.write_items_queue.clone(),
+            write_items_queue: self.write_items_queue.clone(),
         };
 
         thread::spawn(move || {
