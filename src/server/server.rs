@@ -2,6 +2,7 @@ use protocol::read::LurkReadChannel;
 use protocol::send::LurkSendChannel;
 use protocol::protocol_message::*;
 use uuid::Uuid;
+use std::io::Read;
 use std::net::TcpStream;
 use std::net::IpAddr;
 use std::net::TcpListener;
@@ -259,7 +260,9 @@ impl Server {
             guard.on_connect(&mut context);
         }
 
-        let clients_guard = self.clients.lock().map_err(|_| String::from("Poison error!"))?;
+        let clients_guard = self.clients
+            .lock()
+            .map_err(|_| String::from("Poison error!"))?;
 
         let client_ref = clients_guard[&key].clone();
         let client_id = Arc::new(key.clone());
@@ -283,7 +286,25 @@ impl Server {
 
                             match guard.update(callbacks.clone(), &server_access) {
                                 Ok(_) => {}
-                                Err(e) => println!("Error encountered: {}", e),
+                                Err(e) => {
+                                    println!("Error encountered: {}", e);
+                                    match guard.get_send_channel().write_message(
+                                        Error::other("Malformed communication.".to_string())
+                                            .unwrap(),
+                                    ) {
+                                        Ok(_) => {}
+                                        Err(_) => guard.health_state = ClientHealthState::Bad,
+                                    }
+
+                                    let mut buf = vec![];
+                                    // Try to clear the buffer to reset communications
+                                    match guard.stream.read_to_end(&mut buf) {
+                                        Ok(_) => {}
+                                        Err(_) => {
+                                            guard.health_state = ClientHealthState::Bad;
+                                        }
+                                    }
+                                }
                             };
                         }
 
