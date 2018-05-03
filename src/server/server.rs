@@ -166,6 +166,26 @@ impl Client {
 
 pub type LurkServerError = Result<(), ()>;
 
+pub struct UpdateContext {
+    write_queue : Arc<Mutex<Vec<WriteQueueItem>>>
+}
+
+impl UpdateContext {
+    pub fn enqueue_message<T>(&mut self, message: T, target: Uuid)
+    where
+        T: 'static + LurkMessageBlobify + Send,
+    {
+        match self.write_queue.lock() {
+            Ok(mut queue) => {
+                queue.push(WriteQueueItem::new(message, target));
+            }
+            Err(_) => {
+                println!("Could not enqueue message.");
+            }
+        };
+    }
+}
+
 pub trait ServerCallbacks {
     fn on_connect(&mut self, context: &mut ServerEventContext) -> LurkServerError;
     fn on_disconnect(&mut self, client_id: &Uuid);
@@ -195,7 +215,7 @@ pub trait ServerCallbacks {
     ) -> LurkServerError;
     fn on_leave(&mut self, client_id: &Uuid) -> LurkServerError;
 
-    fn update(&mut self);
+    fn update(&mut self, update_context : &UpdateContext);
 }
 
 pub struct ServerAccess {
@@ -311,7 +331,7 @@ impl Server {
             };
 
             match callbacks.lock() {
-                Ok(mut c) => c.update(),
+                Ok(mut c) => c.update(&UpdateContext { write_queue : write_items_queue.clone()}),
                 Err(_) => {},
             };
 
