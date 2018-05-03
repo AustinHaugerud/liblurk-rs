@@ -11,6 +11,7 @@ use std::thread;
 use std::time;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::net::Shutdown;
 
 #[derive(Eq, PartialEq)]
 enum ClientHealthState {
@@ -140,9 +141,12 @@ impl Client {
             LurkMessageKind::Game => {
                 Game::parse_lurk_message(data.as_slice())?;
             }
-            LurkMessageKind::Leave => match callbacks_guard.on_leave(&self.id) {
-                Err(_) => self.health_state = ClientHealthState::Bad,
-                _ => {}
+            LurkMessageKind::Leave => {
+                match callbacks_guard.on_leave(&self.id) {
+                    Err(_) => self.health_state = ClientHealthState::Bad,
+                    _ => {}
+                };
+                self.stream.shutdown(Shutdown::Both).map_err(|_| "Failed to shutdown.".to_string())?;
             },
             LurkMessageKind::Connection => {
                 Connection::parse_lurk_message(data.as_slice())?;
