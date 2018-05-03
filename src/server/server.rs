@@ -407,6 +407,7 @@ impl Server {
                         active: true,
                         health_state: ClientHealthState::Good,
                     };
+                    client.stream.set_read_timeout(Some(time::Duration::from_millis(100))).expect("Failed to set read timeout.");
 
                     // Non-blocking disabled currently, instead we just peek to see if data is available per loop iteration
                     if client.stream.set_nonblocking(false).is_err() {
