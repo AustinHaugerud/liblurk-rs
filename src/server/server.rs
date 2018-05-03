@@ -312,8 +312,8 @@ impl Server {
 
             match write_items_queue.lock() {
                 Ok(mut q) => {
-                    for i in 0..q.len() {
-                        queue.push(q.remove(i));
+                    for item in q.drain(..) {
+                        queue.push(item);
                     }
                 }
                 Err(_) => {
