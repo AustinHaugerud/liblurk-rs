@@ -63,6 +63,7 @@ impl Client {
         callbacks: Arc<Mutex<Box<ServerCallbacks + Send>>>,
         server_access: &ServerAccess,
     ) -> Result<bool, String> {
+        println!("Getting data.");
         if !self.data_available() {
             return Ok(true);
         }
