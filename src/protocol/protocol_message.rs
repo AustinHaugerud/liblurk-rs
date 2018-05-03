@@ -565,6 +565,7 @@ impl LurkMessageType for Room {
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+#[derive(Clone)]
 pub struct Character {
     pub player_name: String,
     pub is_alive: bool,
