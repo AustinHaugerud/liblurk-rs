@@ -171,7 +171,7 @@ pub struct UpdateContext {
 }
 
 impl UpdateContext {
-    pub fn enqueue_message<T>(&mut self, message: T, target: Uuid)
+    pub fn enqueue_message<T>(&self, message: T, target: Uuid)
     where
         T: 'static + LurkMessageBlobify + Send,
     {
