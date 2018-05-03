@@ -194,6 +194,8 @@ pub trait ServerCallbacks {
         character: &Character,
     ) -> LurkServerError;
     fn on_leave(&mut self, client_id: &Uuid) -> LurkServerError;
+
+    fn update(&mut self);
 }
 
 pub struct ServerAccess {
@@ -288,9 +290,11 @@ impl Server {
         let clients = self.clients.clone();
         let write_items_queue = self.write_items_queue.clone();
         let running = self.running.clone();
+        let callbacks = self.callbacks.clone();
 
         // Process clients write queue
         thread::spawn(move || loop {
+
             match running.lock() {
                 Ok(status) => {
                     if *status == false {
@@ -304,6 +308,11 @@ impl Server {
                     );
                     break;
                 }
+            };
+
+            match callbacks.lock() {
+                Ok(mut c) => c.update(),
+                Err(_) => {},
             };
 
 
