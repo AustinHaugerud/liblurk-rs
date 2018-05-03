@@ -207,7 +207,7 @@ pub struct ServerEventContext<'a> {
 }
 
 impl<'a> ServerEventContext<'a> {
-    pub fn get_client(&self, id: &Uuid) -> Result<Option<Arc<Mutex<Client>>>, ()> {
+    /*pub fn get_client(&self, id: &Uuid) -> Result<Option<Arc<Mutex<Client>>>, ()> {
         match self.server.clients.lock() {
             Ok(guard) => match guard.contains_key(id) {
                 true => Ok(Some(guard[id].clone())),
@@ -217,7 +217,7 @@ impl<'a> ServerEventContext<'a> {
         }
     }
 
-    /*pub fn get_send_channel(&mut self) -> &mut LurkSendChannel<'a, TcpStream> {
+    pub fn get_send_channel(&mut self) -> &mut LurkSendChannel<'a, TcpStream> {
         &mut self.write_channel
     }*/
 
@@ -319,6 +319,7 @@ impl Server {
             match running.lock() {
                 Ok(status) => {
                     if *status == false {
+                        println!("Processing thread ending.");
                         break;
                     }
                 }
