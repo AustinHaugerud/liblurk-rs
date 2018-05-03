@@ -11,7 +11,6 @@ use std::thread;
 use std::time;
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::collections::VecDeque;
 
 #[derive(Eq, PartialEq)]
 enum ClientHealthState {
@@ -74,10 +73,8 @@ impl Client {
         let (kind, data) = self.pull_client_message()
             .map_err(|_| String::from("Failed to pull client message"))?;
 
-        let send_channel = LurkSendChannel::new(&mut self.stream);
         let mut context = ServerEventContext {
             server: server_access,
-            write_channel: send_channel,
             client_id: self.id.clone(),
         };
 
@@ -196,31 +193,15 @@ pub trait ServerCallbacks {
 }
 
 pub struct ServerAccess {
-    clients: Arc<Mutex<HashMap<Uuid, Arc<Mutex<Client>>>>>,
-    write_items_queue: Arc<Mutex<VecDeque<WriteQueueItem>>>,
+    write_items_queue: Arc<Mutex<Vec<WriteQueueItem>>>,
 }
 
 pub struct ServerEventContext<'a> {
     server: &'a ServerAccess,
-    write_channel: LurkSendChannel<'a, TcpStream>,
     client_id: Uuid,
 }
 
 impl<'a> ServerEventContext<'a> {
-    /*pub fn get_client(&self, id: &Uuid) -> Result<Option<Arc<Mutex<Client>>>, ()> {
-        match self.server.clients.lock() {
-            Ok(guard) => match guard.contains_key(id) {
-                true => Ok(Some(guard[id].clone())),
-                false => Ok(None),
-            },
-            Err(_) => Err(()),
-        }
-    }
-
-    pub fn get_send_channel(&mut self) -> &mut LurkSendChannel<'a, TcpStream> {
-        &mut self.write_channel
-    }*/
-
     pub fn get_client_id(&self) -> Uuid {
         self.client_id.clone()
     }
@@ -231,7 +212,7 @@ impl<'a> ServerEventContext<'a> {
     {
         match self.server.write_items_queue.lock() {
             Ok(mut queue) => {
-                queue.push_back(WriteQueueItem::new(message, target));
+                queue.push(WriteQueueItem::new(message, target));
             }
             Err(_) => {
                 println!("Could not enqueue message.");
@@ -253,7 +234,7 @@ pub struct Server {
     callbacks: Arc<Mutex<Box<ServerCallbacks + Send>>>,
     running: Arc<Mutex<bool>>,
     server_address: (IpAddr, u16),
-    write_items_queue: Arc<Mutex<VecDeque<WriteQueueItem>>>,
+    write_items_queue: Arc<Mutex<Vec<WriteQueueItem>>>,
 }
 
 impl Server {
@@ -266,7 +247,7 @@ impl Server {
             callbacks: Arc::new(Mutex::new(behavior)),
             running: Arc::new(Mutex::new(false)),
             server_address: (host, port),
-            write_items_queue: Arc::new(Mutex::new(VecDeque::new())),
+            write_items_queue: Arc::new(Mutex::new(Vec::new())),
         })
     }
 
@@ -299,16 +280,6 @@ impl Server {
         }
     }
 
-    fn get_client_mut(&mut self, id: &Uuid) -> Result<Option<Arc<Mutex<Client>>>, ()> {
-        match self.clients.lock() {
-            Ok(clients) => match clients.contains_key(id) {
-                true => Ok(Some(clients[id].clone())),
-                false => Ok(None),
-            },
-            Err(_) => Err(()),
-        }
-    }
-
     fn main(&mut self, listener: TcpListener) {
         let clients = self.clients.clone();
         let write_items_queue = self.write_items_queue.clone();
@@ -331,36 +302,50 @@ impl Server {
                 }
             };
 
+
+            // We move items out of the queue so that the lock for it isn't needed at the same time
+            // as a lock for a client. Clients have to write to the queue also, so we're
+            // avoiding a deadlock with this. If the client tries to write during this lock,
+            // the queue will have been emptied first, then the new item enqueued, then it will be processed
+            // the next round which is fine.
+            let mut queue = vec![];
+
+            match write_items_queue.lock() {
+                Ok(mut q) => {
+                    for i in 0..q.len() {
+                        queue.push(q.remove(i));
+                    }
+                }
+                Err(_) => {
+                    println!("Critical: Write queue processing poison.");
+                }
+            };
+
+
             match clients.lock() {
-                Ok(mut clients) => match write_items_queue.lock() {
-                    Ok(mut queue) => {
-                        for item in queue.iter() {
-                            if let Some(clientg) = clients.get_mut(&item.target) {
-                                match clientg.lock() {
-                                    Ok(mut client) => match client
-                                        .get_send_channel()
-                                        .write_message_uptr(&item.packet)
+                Ok(mut clients) => {
+                    for item in queue.iter() {
+                        if let Some(clientg) = clients.get_mut(&item.target) {
+                            match clientg.lock() {
+                                Ok(mut client) => {
+                                    match client.get_send_channel().write_message_uptr(&item.packet)
                                     {
                                         Ok(_) => {}
                                         Err(_) => {
                                             println!("Failed to write to client.");
                                             client.health_state = ClientHealthState::Bad;
                                         }
-                                    },
-                                    Err(_) => println!(
-                                        "Failed to lock onto client for queue processing.."
-                                    ),
+                                    }
                                 }
-                            } else {
-                                println!("Invalid target in queue processing.");
+                                Err(_) => {
+                                    println!("Failed to lock onto client for queue processing..")
+                                }
                             }
+                        } else {
+                            println!("Invalid target in queue processing.");
                         }
-                        queue.clear();
                     }
-                    Err(_) => {
-                        println!("Failed to lock and process write queue.");
-                    }
-                },
+                }
                 Err(_) => {
                     println!("Failed lock clients for write queue processing.");
                 }
@@ -433,24 +418,15 @@ impl Server {
 
             clients_guard.insert(key, Arc::new(Mutex::new(client)));
 
-            let mut client_ref = clients_guard
-                .get(&key)
-                .unwrap()
-                .lock()
-                .map_err(|_| String::from("Poison error!"))?;
 
             let mut guard = self.callbacks
                 .lock()
                 .map_err(|_| String::from("Failed to lock for client addition."))?;
 
-            let send_channel = LurkSendChannel::new(&mut client_ref.stream);
-
             let mut context = ServerEventContext {
                 server: &ServerAccess {
-                    clients: self.clients.clone(),
                     write_items_queue: self.write_items_queue.clone(),
                 },
-                write_channel: send_channel,
                 client_id: key.clone(),
             };
 
@@ -464,10 +440,8 @@ impl Server {
             .map_err(|_| String::from("Poison error!"))?;
 
         let client_ref = clients_guard[&key].clone();
-        let client_id = Arc::new(key.clone());
         let callbacks = self.callbacks.clone();
         let server_access = ServerAccess {
-            clients: self.clients.clone(),
             write_items_queue: self.write_items_queue.clone(),
         };
 
@@ -516,25 +490,12 @@ impl Server {
                             };
                         }
 
-                        Err(_) => match server_access.clients.lock() {
-                            Ok(mut clients_guard) => {
-                                clients_guard.remove(&client_id);
-                            }
-                            Err(_) => {
-                                println!("Critical Error: Main server thread corrupted.");
-                                panic!("Critical Error: Main server thread corrupted.");
-                            }
-                        },
+                        Err(_) => {}
                     };
                 }
 
                 thread::sleep(time::Duration::from_millis(10));
             }
-            server_access
-                .clients
-                .lock()
-                .expect("Critical Error: Main server thread corrupted.")
-                .remove(&client_id);
         });
 
         Ok(())
