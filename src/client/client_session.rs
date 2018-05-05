@@ -16,13 +16,13 @@ pub trait ClientSessionCallbacks {
 
 pub struct ClientSession {
     stream: TcpStream,
-    callbacks: Box<ClientSessionCallbacks>,
+    callbacks: Box<ClientSessionCallbacks + Send>,
 }
 
 impl ClientSession {
     pub fn create(
         (host, port): (IpAddr, u16),
-        behavior: Box<ClientSessionCallbacks>,
+        behavior: Box<ClientSessionCallbacks + Send>,
     ) -> Result<ClientSession, String> {
         match TcpStream::connect((host, port)) {
             Ok(t) => {
