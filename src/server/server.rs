@@ -373,8 +373,9 @@ impl Server {
                 for (id, client) in gclients.iter_mut() {
                     let mut client = client.lock().unwrap();
                     client.inactivity_time.add_assign(elapsed);
+                    println!("IT: {}", client.inactivity_time.as_secs());
 
-                    if client.inactivity_time.gt(&timeout) {
+                    if client.inactivity_time.gt(&timeout) || client.health_state == ClientHealthState::Bad || client.health_state == ClientHealthState::Close {
                         // If the client has been inactive too long, signal a LEAVE
                         // message on their behalf.
                         let idc = id.clone();
