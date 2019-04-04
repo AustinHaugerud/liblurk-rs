@@ -395,14 +395,16 @@ impl Server {
                     let mut client = client.lock().unwrap();
                     client.inactivity_time.add_assign(elapsed);
 
-                    if client.inactivity_time.gt(&timeout)
+                    if client.inactivity_time > *timeout
                         || client.health_state == ClientHealthState::Bad
                         || client.health_state == ClientHealthState::Close
                     {
+                        println!("Client timed out!");
                         // If the client has been inactive too long, signal a LEAVE
                         // message on their behalf.
                         let idc = id.clone();
                         queue.push(WriteQueueItem::new(Leave::new(), idc, *server_id.clone()));
+                        client.health_state = ClientHealthState::Close;
                     }
                 }
                 last_time.add_assign(elapsed);
@@ -440,7 +442,7 @@ impl Server {
             // Cleanse clients
             {
                 let mut remove_ids = vec![];
-                for (id, client) in clients.lock().unwrap().iter() {
+                for (_id, client) in clients.lock().unwrap().iter() {
                     let gclient = client.lock().unwrap();
                     if gclient.health_state == ClientHealthState::Bad || gclient.health_state == ClientHealthState::Close {
                         remove_ids.push(gclient.id.clone());
