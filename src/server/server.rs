@@ -177,16 +177,17 @@ pub type LurkServerError = Result<(), ()>;
 
 pub struct UpdateContext {
     write_queue: Arc<Mutex<Vec<WriteQueueItem>>>,
+    update_context_id : Uuid,
 }
 
 impl UpdateContext {
-    pub fn enqueue_message<T>(&self, sender: Uuid, message: T, target: Uuid)
+    pub fn enqueue_message<T>(&self, message: T, target: Uuid)
     where
         T: 'static + LurkMessageBlobify + Send,
     {
         match self.write_queue.lock() {
             Ok(mut queue) => {
-                queue.push(WriteQueueItem::new(message, target, sender));
+                queue.push(WriteQueueItem::new(message, target, self.update_context_id.clone()));
             }
             Err(_) => {
                 println!("Could not enqueue message.");
@@ -352,6 +353,7 @@ impl Server {
             match callbacks.lock() {
                 Ok(mut c) => c.update(&UpdateContext {
                     write_queue: write_items_queue.clone(),
+                    update_context_id : Uuid::new_v4()
                 }),
                 Err(_) => {}
             };
