@@ -358,12 +358,17 @@ impl Server {
                 Err(_) => {}
             };
 
-            // Update inactivity times
+            // We move items out of the queue so that the lock for it isn't needed at the same time
+            // as a lock for a client. Clients have to write to the queue also, so we're
+            // avoiding a deadlock with this. If the client tries to write during this lock,
+            // the queue will have been emptied first, then the new item enqueued, then it will be processed
+            // the next round which is fine.
+            let mut queue = vec![];
 
+            // Update inactivity times
             {
                 let mut last_time = last_time.lock().unwrap();
                 let elapsed = last_time.elapsed().unwrap();
-                let mut write = write_items_queue.lock().unwrap();
                 let mut gclients = clients.lock().unwrap();
                 for (id, client) in gclients.iter_mut() {
                     let mut client = client.lock().unwrap();
@@ -373,7 +378,7 @@ impl Server {
                         // If the client has been inactive too long, signal a LEAVE
                         // message on their behalf.
                         let idc = id.clone();
-                        write.push(WriteQueueItem::new(
+                        queue.push(WriteQueueItem::new(
                         Leave::new(),
                         idc,
                         *server_id.clone(),
@@ -382,13 +387,6 @@ impl Server {
                 }
                 last_time.add_assign(elapsed);
             }
-
-            // We move items out of the queue so that the lock for it isn't needed at the same time
-            // as a lock for a client. Clients have to write to the queue also, so we're
-            // avoiding a deadlock with this. If the client tries to write during this lock,
-            // the queue will have been emptied first, then the new item enqueued, then it will be processed
-            // the next round which is fine.
-            let mut queue = vec![];
 
             match write_items_queue.lock() {
                 Ok(mut q) => {
