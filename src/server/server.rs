@@ -177,7 +177,7 @@ pub type LurkServerError = Result<(), ()>;
 
 pub struct UpdateContext {
     write_queue: Arc<Mutex<Vec<WriteQueueItem>>>,
-    update_context_id : Uuid,
+    update_context_id: Uuid,
 }
 
 impl UpdateContext {
@@ -187,7 +187,11 @@ impl UpdateContext {
     {
         match self.write_queue.lock() {
             Ok(mut queue) => {
-                queue.push(WriteQueueItem::new(message, target, self.update_context_id.clone()));
+                queue.push(WriteQueueItem::new(
+                    message,
+                    target,
+                    self.update_context_id.clone(),
+                ));
             }
             Err(_) => {
                 println!("Could not enqueue message.");
@@ -353,7 +357,7 @@ impl Server {
             match callbacks.lock() {
                 Ok(mut c) => c.update(&UpdateContext {
                     write_queue: write_items_queue.clone(),
-                    update_context_id : Uuid::new_v4()
+                    update_context_id: Uuid::new_v4(),
                 }),
                 Err(_) => {}
             };
@@ -364,30 +368,6 @@ impl Server {
             // the queue will have been emptied first, then the new item enqueued, then it will be processed
             // the next round which is fine.
             let mut queue = vec![];
-
-            // Update inactivity times
-            {
-                let mut last_time = last_time.lock().unwrap();
-                let elapsed = last_time.elapsed().unwrap();
-                let mut gclients = clients.lock().unwrap();
-                for (id, client) in gclients.iter_mut() {
-                    let mut client = client.lock().unwrap();
-                    client.inactivity_time.add_assign(elapsed);
-                    println!("IT: {}", client.inactivity_time.as_secs());
-
-                    if client.inactivity_time.gt(&timeout) || client.health_state == ClientHealthState::Bad || client.health_state == ClientHealthState::Close {
-                        // If the client has been inactive too long, signal a LEAVE
-                        // message on their behalf.
-                        let idc = id.clone();
-                        queue.push(WriteQueueItem::new(
-                        Leave::new(),
-                        idc,
-                        *server_id.clone(),
-                    ));
-                    }
-                }
-                last_time.add_assign(elapsed);
-            }
 
             match write_items_queue.lock() {
                 Ok(mut q) => {
@@ -405,6 +385,28 @@ impl Server {
                     println!("Critical: Write queue processing poison.");
                 }
             };
+
+            // Update inactivity times
+            {
+                let mut last_time = last_time.lock().unwrap();
+                let elapsed = last_time.elapsed().unwrap();
+                let mut gclients = clients.lock().unwrap();
+                for (id, client) in gclients.iter_mut() {
+                    let mut client = client.lock().unwrap();
+                    client.inactivity_time.add_assign(elapsed);
+
+                    if client.inactivity_time.gt(&timeout)
+                        || client.health_state == ClientHealthState::Bad
+                        || client.health_state == ClientHealthState::Close
+                    {
+                        // If the client has been inactive too long, signal a LEAVE
+                        // message on their behalf.
+                        let idc = id.clone();
+                        queue.push(WriteQueueItem::new(Leave::new(), idc, *server_id.clone()));
+                    }
+                }
+                last_time.add_assign(elapsed);
+            }
 
             match clients.lock() {
                 Ok(mut clients) => {
@@ -432,6 +434,22 @@ impl Server {
                 }
                 Err(_) => {
                     println!("Failed lock clients for write queue processing.");
+                }
+            }
+
+            // Cleanse clients
+            {
+                let mut remove_ids = vec![];
+                for (id, client) in clients.lock().unwrap().iter() {
+                    let gclient = client.lock().unwrap();
+                    if gclient.health_state == ClientHealthState::Bad || gclient.health_state == ClientHealthState::Close {
+                        remove_ids.push(gclient.id.clone());
+                    }
+                }
+
+                let mut gclients = clients.lock().unwrap();
+                for id in remove_ids.iter() {
+                    gclients.remove(&id);
                 }
             }
 
