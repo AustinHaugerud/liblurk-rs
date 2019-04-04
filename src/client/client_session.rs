@@ -1,8 +1,8 @@
-use std::net::TcpStream;
-use std::net::IpAddr;
 use protocol::protocol_message::*;
 use protocol::read::LurkReadChannel;
 use protocol::send::LurkSendChannel;
+use std::net::IpAddr;
+use std::net::TcpStream;
 
 pub trait ClientSessionCallbacks {
     fn on_message(&mut self, channel: &mut LurkSendChannel<TcpStream>, message: &Message);

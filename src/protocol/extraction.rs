@@ -1,6 +1,6 @@
-use std::io::Read;
 use protocol::primitive_parse::parse_u16l;
 use std::io::Error as IOError;
+use std::io::Read;
 
 const LURK_FIXED_STRING_SIZE: u16 = 32;
 
@@ -23,9 +23,9 @@ impl Extractor {
     }
 
     pub fn message() -> Extractor {
-        Extractor::create(vec![
-            ExtractNode::FracturedVarString(2 * LURK_FIXED_STRING_SIZE),
-        ])
+        Extractor::create(vec![ExtractNode::FracturedVarString(
+            2 * LURK_FIXED_STRING_SIZE,
+        )])
     }
 
     pub fn change_room() -> Extractor {

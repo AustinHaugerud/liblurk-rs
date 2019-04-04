@@ -1,6 +1,6 @@
+use protocol::extraction::Extractor;
 use protocol::protocol_message::LurkMessageKind;
 use std::io::Read;
-use protocol::extraction::Extractor;
 
 pub struct LurkReadChannel<'a, T>
 where

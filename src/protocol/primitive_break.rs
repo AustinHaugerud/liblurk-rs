@@ -116,9 +116,7 @@ mod tests {
 
         assert_eq!(
             data,
-            vec![
-                0x05u8, 0x00u8, 'h' as u8, 'e' as u8, 'l' as u8, 'l' as u8, 'o' as u8
-            ]
+            vec![0x05u8, 0x00u8, 'h' as u8, 'e' as u8, 'l' as u8, 'l' as u8, 'o' as u8]
         );
     }
 

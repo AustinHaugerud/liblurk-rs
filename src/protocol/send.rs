@@ -39,7 +39,7 @@ where
         self.target.write_all(&mut data).map_err(|_| ())
     }
 
-    pub fn write_message_ref_dyn(&mut self, message : &LurkMessageBlobify) -> Result<(), ()> {
+    pub fn write_message_ref_dyn(&mut self, message: &LurkMessageBlobify) -> Result<(), ()> {
         let mut data = message.produce_lurk_message_blob();
         self.target.write_all(&mut data).map_err(|_| ())
     }

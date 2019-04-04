@@ -1,8 +1,9 @@
-pub mod protocol;
 pub mod client;
+pub mod protocol;
 pub mod server;
 mod util;
 
+extern crate proc_macro;
 extern crate uuid;
 
 #[cfg(test)]

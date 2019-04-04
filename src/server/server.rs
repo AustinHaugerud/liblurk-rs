@@ -1,17 +1,20 @@
+use protocol::protocol_message::*;
 use protocol::read::LurkReadChannel;
 use protocol::send::LurkSendChannel;
-use protocol::protocol_message::*;
-use uuid::Uuid;
 use std::io::Read;
-use std::net::TcpStream;
-use std::net::IpAddr;
+use uuid::Uuid;
+
 use std::net::TcpListener;
+use std::net::TcpStream;
+
 use std::collections::HashMap;
-use std::thread;
-use std::time;
+use std::net::{Shutdown, SocketAddr};
+use std::ops::AddAssign;
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::net::Shutdown;
+use std::thread;
+use std::time;
+use std::time::{Duration, SystemTime};
 
 #[derive(Eq, PartialEq)]
 enum ClientHealthState {
@@ -23,16 +26,18 @@ enum ClientHealthState {
 struct WriteQueueItem {
     packet: Box<LurkMessageBlobify + Send>,
     target: Uuid,
+    sender: Uuid,
 }
 
 impl WriteQueueItem {
-    pub fn new<T>(packet_impl: T, target: Uuid) -> WriteQueueItem
+    pub fn new<T>(packet_impl: T, target: Uuid, sender: Uuid) -> WriteQueueItem
     where
         T: 'static + LurkMessageBlobify + Send,
     {
         WriteQueueItem {
             packet: Box::new(packet_impl),
             target,
+            sender,
         }
     }
 }
@@ -42,6 +47,7 @@ pub struct Client {
     id: Uuid,
     active: bool,
     health_state: ClientHealthState,
+    inactivity_time: Duration,
 }
 
 impl Client {
@@ -49,7 +55,7 @@ impl Client {
         LurkSendChannel::new(&mut self.stream)
     }
 
-    fn data_available(&self) -> bool {
+    fn data_available(&mut self) -> bool {
         let mut buf = [0u8];
         let peek_result = self.stream.peek(&mut buf);
         if let Ok(num_read) = peek_result {
@@ -71,7 +77,8 @@ impl Client {
             .lock()
             .map_err(|_| String::from("Mutex poison error."))?;
 
-        let (kind, data) = self.pull_client_message()
+        let (kind, data) = self
+            .pull_client_message()
             .map_err(|_| String::from("Failed to pull client message"))?;
 
         let mut context = ServerEventContext {
@@ -146,8 +153,10 @@ impl Client {
                     Err(_) => self.health_state = ClientHealthState::Bad,
                     _ => {}
                 };
-                self.stream.shutdown(Shutdown::Both).map_err(|_| "Failed to shutdown.".to_string())?;
-            },
+                self.stream
+                    .shutdown(Shutdown::Both)
+                    .map_err(|_| "Failed to shutdown.".to_string())?;
+            }
             LurkMessageKind::Connection => {
                 Connection::parse_lurk_message(data.as_slice())?;
             }
@@ -167,17 +176,17 @@ impl Client {
 pub type LurkServerError = Result<(), ()>;
 
 pub struct UpdateContext {
-    write_queue : Arc<Mutex<Vec<WriteQueueItem>>>
+    write_queue: Arc<Mutex<Vec<WriteQueueItem>>>,
 }
 
 impl UpdateContext {
-    pub fn enqueue_message<T>(&self, message: T, target: Uuid)
+    pub fn enqueue_message<T>(&self, sender: Uuid, message: T, target: Uuid)
     where
         T: 'static + LurkMessageBlobify + Send,
     {
         match self.write_queue.lock() {
             Ok(mut queue) => {
-                queue.push(WriteQueueItem::new(message, target));
+                queue.push(WriteQueueItem::new(message, target, sender));
             }
             Err(_) => {
                 println!("Could not enqueue message.");
@@ -215,7 +224,7 @@ pub trait ServerCallbacks {
     ) -> LurkServerError;
     fn on_leave(&mut self, client_id: &Uuid) -> LurkServerError;
 
-    fn update(&mut self, update_context : &UpdateContext);
+    fn update(&mut self, update_context: &UpdateContext);
 }
 
 pub struct ServerAccess {
@@ -238,7 +247,8 @@ impl<'a> ServerEventContext<'a> {
     {
         match self.server.write_items_queue.lock() {
             Ok(mut queue) => {
-                queue.push(WriteQueueItem::new(message, target));
+                let sender_id = self.client_id.clone();
+                queue.push(WriteQueueItem::new(message, target, sender_id));
             }
             Err(_) => {
                 println!("Could not enqueue message.");
@@ -251,7 +261,7 @@ impl<'a> ServerEventContext<'a> {
         T: 'static + LurkMessageBlobify + Send,
     {
         let id = self.client_id.clone();
-        self.enqueue_message(message, id)
+        self.enqueue_message(message, id);
     }
 }
 
@@ -259,26 +269,33 @@ pub struct Server {
     clients: Arc<Mutex<HashMap<Uuid, Arc<Mutex<Client>>>>>,
     callbacks: Arc<Mutex<Box<ServerCallbacks + Send>>>,
     running: Arc<Mutex<bool>>,
-    server_address: (IpAddr, u16),
+    server_address: SocketAddr,
     write_items_queue: Arc<Mutex<Vec<WriteQueueItem>>>,
+    last_time: Arc<Mutex<SystemTime>>,
+    timeout: Arc<Duration>,
+    server_id: Arc<Uuid>,
 }
 
 impl Server {
     pub fn create(
-        (host, port): (IpAddr, u16),
+        addr: SocketAddr,
+        timeout: Duration,
         behavior: Box<ServerCallbacks + Send>,
     ) -> Result<Server, String> {
         Ok(Server {
             clients: Arc::new(Mutex::new(HashMap::new())),
             callbacks: Arc::new(Mutex::new(behavior)),
             running: Arc::new(Mutex::new(false)),
-            server_address: (host, port),
+            server_address: addr,
             write_items_queue: Arc::new(Mutex::new(Vec::new())),
+            last_time: Arc::new(Mutex::new(time::SystemTime::now())),
+            timeout: Arc::new(timeout),
+            server_id: Arc::new(Uuid::new_v4()),
         })
     }
 
     pub fn start(&mut self) -> Result<(), ()> {
-        let listener = TcpListener::bind(self.server_address).map_err(|_| ())?;
+        let listener = TcpListener::bind(&self.server_address).map_err(|_| ())?;
 
         match self.running.lock() {
             Ok(mut running) => {
@@ -311,10 +328,12 @@ impl Server {
         let write_items_queue = self.write_items_queue.clone();
         let running = self.running.clone();
         let callbacks = self.callbacks.clone();
+        let last_time = self.last_time.clone();
+        let timeout = self.timeout.clone();
+        let server_id = self.server_id.clone();
 
         // Process clients write queue
         thread::spawn(move || loop {
-
             match running.lock() {
                 Ok(status) => {
                     if *status == false {
@@ -331,10 +350,36 @@ impl Server {
             };
 
             match callbacks.lock() {
-                Ok(mut c) => c.update(&UpdateContext { write_queue : write_items_queue.clone()}),
-                Err(_) => {},
+                Ok(mut c) => c.update(&UpdateContext {
+                    write_queue: write_items_queue.clone(),
+                }),
+                Err(_) => {}
             };
 
+            // Update inactivity times
+
+            {
+                let mut last_time = last_time.lock().unwrap();
+                let elapsed = last_time.elapsed().unwrap();
+                let mut write = write_items_queue.lock().unwrap();
+                let mut gclients = clients.lock().unwrap();
+                for (id, client) in gclients.iter_mut() {
+                    let mut client = client.lock().unwrap();
+                    client.inactivity_time.add_assign(elapsed);
+
+                    if client.inactivity_time.gt(&timeout) {
+                        // If the client has been inactive too long, signal a LEAVE
+                        // message on their behalf.
+                        let idc = id.clone();
+                        write.push(WriteQueueItem::new(
+                        Leave::new(),
+                        idc,
+                        *server_id.clone(),
+                    ));
+                    }
+                }
+                last_time.add_assign(elapsed);
+            }
 
             // We move items out of the queue so that the lock for it isn't needed at the same time
             // as a lock for a client. Clients have to write to the queue also, so we're
@@ -345,15 +390,20 @@ impl Server {
 
             match write_items_queue.lock() {
                 Ok(mut q) => {
+                    let clients = clients.lock().unwrap();
                     for item in q.drain(..) {
+                        let sender = item.sender.clone();
                         queue.push(item);
+                        if let Some(mut mclient) = clients.get(&sender) {
+                            let mut client = mclient.lock().unwrap();
+                            client.inactivity_time = Duration::from_secs(0);
+                        }
                     }
                 }
                 Err(_) => {
                     println!("Critical: Write queue processing poison.");
                 }
             };
-
 
             match clients.lock() {
                 Ok(mut clients) => {
@@ -383,6 +433,8 @@ impl Server {
                     println!("Failed lock clients for write queue processing.");
                 }
             }
+
+            thread::sleep(Duration::from_millis(10));
         });
 
         for client_request in listener.incoming() {
@@ -405,8 +457,12 @@ impl Server {
                         id: Uuid::new_v4(),
                         active: true,
                         health_state: ClientHealthState::Good,
+                        inactivity_time: Duration::new(0, 0),
                     };
-                    client.stream.set_read_timeout(Some(time::Duration::from_millis(100))).expect("Failed to set read timeout.");
+                    client
+                        .stream
+                        .set_read_timeout(Some(time::Duration::from_millis(100)))
+                        .expect("Failed to set read timeout.");
 
                     // Non-blocking disabled currently, instead we just peek to see if data is available per loop iteration
                     if client.stream.set_nonblocking(false).is_err() {
@@ -436,7 +492,8 @@ impl Server {
     }
 
     fn remove_client(&mut self, id: &Uuid) -> Result<(), String> {
-        let mut clients_guard = self.clients
+        let mut clients_guard = self
+            .clients
             .lock()
             .map_err(|_| String::from("Poison error!"))?;
         clients_guard.remove(&id);
@@ -446,14 +503,15 @@ impl Server {
     fn add_client(&mut self, client: Client) -> Result<(), String> {
         let key = client.id.clone();
         {
-            let mut clients_guard = self.clients
+            let mut clients_guard = self
+                .clients
                 .lock()
                 .map_err(|_| String::from("Poison error!"))?;
 
             clients_guard.insert(key, Arc::new(Mutex::new(client)));
 
-
-            let mut guard = self.callbacks
+            let mut guard = self
+                .callbacks
                 .lock()
                 .map_err(|_| String::from("Failed to lock for client addition."))?;
 
@@ -469,7 +527,8 @@ impl Server {
                 .map_err(|_| String::from("On connect callback error"))?;
         }
 
-        let clients_guard = self.clients
+        let clients_guard = self
+            .clients
             .lock()
             .map_err(|_| String::from("Poison error!"))?;
 
