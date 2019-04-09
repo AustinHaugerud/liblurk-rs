@@ -198,6 +198,21 @@ impl UpdateContext {
             }
         };
     }
+
+    pub fn enqueue_message_dyn(&self, packet : Box<LurkMessageBlobify + Send>, target: Uuid) {
+        match self.write_queue.lock() {
+            Ok(mut queue) => {
+                queue.push(WriteQueueItem {
+                    packet,
+                    target,
+                    sender: self.update_context_id.clone(),
+                })
+            },
+            Err(_) => {
+                println!("Could not enqueue dyn message.")
+            }
+        }
+    }
 }
 
 pub trait ServerCallbacks {
