@@ -78,7 +78,7 @@ impl<'a> ReadBufferCursor<'a> {
 }
 
 pub fn parse_u16l(bytes: &[u8]) -> u16 {
-    (bytes[0] as u16 | ((bytes[1] as u16) << 8))
+    u16::from(bytes[0]) | (u16::from(bytes[1]) << 8)
 }
 
 fn parse_i16l(bytes: &[u8]) -> i16 {
@@ -87,7 +87,7 @@ fn parse_i16l(bytes: &[u8]) -> i16 {
     if val < 0x7fff {
         val as i16
     } else {
-        -1 - (0xffffu32 - (val as u32)) as i16
+        -1 - (0xffffu32 - (u32::from(val))) as i16
     }
 }
 
@@ -99,10 +99,10 @@ fn parse_var_string(bytes: &[u8]) -> Result<String, String> {
     let size = parse_u16l(&bytes) as usize;
 
     if size > bytes.len() - 2 {
-        return Err(String::from(format!(
+        return Err(format!(
             "Length descriptor {} asks for more bytes than present.",
             size
-        )));
+        ));
     }
 
     match from_utf8(&bytes[2..(2 + size)]) {

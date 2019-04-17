@@ -4,6 +4,7 @@ pub mod server;
 mod util;
 
 extern crate proc_macro;
+extern crate rayon;
 extern crate uuid;
 
 #[cfg(test)]

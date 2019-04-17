@@ -95,11 +95,11 @@ impl Extractor {
         let mut result: Vec<u8> = vec![];
 
         for node in self.pattern_nodes.iter() {
-            let data: Vec<u8> = match node {
-                &ExtractNode::ByteChunk(size) => self.extract_byte_chunk(stream, size)?,
-                &ExtractNode::FixedStringChunk => self.extract_fixed_string_chunk(stream)?,
-                &ExtractNode::VarStringChunk => self.extract_var_string_chunk(stream)?,
-                &ExtractNode::FracturedVarString(gap_size) => {
+            let data: Vec<u8> = match *node {
+                ExtractNode::ByteChunk(size) => self.extract_byte_chunk(stream, size)?,
+                ExtractNode::FixedStringChunk => self.extract_fixed_string_chunk(stream)?,
+                ExtractNode::VarStringChunk => self.extract_var_string_chunk(stream)?,
+                ExtractNode::FracturedVarString(gap_size) => {
                     self.extract_fractured_var_string_chunk(stream, gap_size)?
                 }
             };

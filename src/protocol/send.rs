@@ -16,31 +16,11 @@ where
         LurkSendChannel { target }
     }
 
-    pub fn write_message<F>(&mut self, message: F) -> Result<(), ()>
+    pub fn write_message<F>(&mut self, message: &F) -> Result<(), ()>
     where
-        F: LurkMessageBlobify,
+        F: LurkMessageBlobify + ?Sized,
     {
-        self.write_message_ref(&message)
-    }
-
-    pub fn write_message_ref<F>(&mut self, message: &F) -> Result<(), ()>
-    where
-        F: LurkMessageBlobify,
-    {
-        let mut data = message.produce_lurk_message_blob();
-        self.target.write_all(&mut data).map_err(|_| ())
-    }
-
-    pub fn write_message_uptr(
-        &mut self,
-        message: &Box<LurkMessageBlobify + Send>,
-    ) -> Result<(), ()> {
-        let mut data = message.produce_lurk_message_blob();
-        self.target.write_all(&mut data).map_err(|_| ())
-    }
-
-    pub fn write_message_ref_dyn(&mut self, message: &LurkMessageBlobify) -> Result<(), ()> {
-        let mut data = message.produce_lurk_message_blob();
-        self.target.write_all(&mut data).map_err(|_| ())
+        let data = message.produce_lurk_message_blob();
+        self.target.write_all(&data).map_err(|_| ())
     }
 }

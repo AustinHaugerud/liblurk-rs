@@ -56,10 +56,44 @@ impl LurkMessageKind {
             _ => Err(()),
         }
     }
+
+    pub fn is_server_recipient(&self) -> bool {
+        match *self {
+            LurkMessageKind::Message => true,
+            LurkMessageKind::ChangeRoom => true,
+            LurkMessageKind::Fight => true,
+            LurkMessageKind::PvPFight => true,
+            LurkMessageKind::Loot => true,
+            LurkMessageKind::Start => true,
+            LurkMessageKind::Character => true,
+            LurkMessageKind::Leave => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_client_recipient(&self) -> bool {
+        match *self {
+            LurkMessageKind::Message => true,
+            LurkMessageKind::Error => true,
+            LurkMessageKind::Accept => true,
+            LurkMessageKind::Character => true,
+            LurkMessageKind::Game => true,
+            LurkMessageKind::Connection => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_server_sendable(&self) -> bool {
+        self.is_client_recipient()
+    }
+
+    pub fn is_client_sendable(&self) -> bool {
+        self.is_server_recipient()
+    }
 }
 
 pub trait LurkMessageParse<T> {
-    fn parse_lurk_message(message_data: &[u8]) -> Result<(T, usize), String>
+    fn parse_lurk_message(message_data: &[u8]) -> Result<(T, usize), ()>
     where
         T: LurkMessageType;
 }
@@ -98,14 +132,14 @@ impl Message {
 }
 
 impl LurkMessageParse<Message> for Message {
-    fn parse_lurk_message(data: &[u8]) -> Result<(Message, usize), String> {
+    fn parse_lurk_message(data: &[u8]) -> Result<(Message, usize), ()> {
         let mut bytes_read: usize = 0;
         let mut cursor = ReadBufferCursor::new(&data);
 
         let message_len = cursor.parse_u16l();
 
         if message_len.is_err() {
-            return Err(String::from("Failed to parse message."));
+            return Err(());
         }
 
         let receiver = cursor.parse_string(NAME_LENGTH);
@@ -116,13 +150,13 @@ impl LurkMessageParse<Message> for Message {
         let len = message_len.unwrap();
 
         if len as usize > cursor.bytes_remaining() {
-            return Err(String::from("Not enough bytes remaining for message."));
+            return Err(());
         }
 
         let message = cursor.parse_string(len);
 
         if receiver.is_err() || sender.is_err() || message.is_err() {
-            return Err(String::from("Failed to parse message."));
+            return Err(());
         }
 
         bytes_read += len as usize;
@@ -171,12 +205,12 @@ impl ChangeRoom {
 }
 
 impl LurkMessageParse<ChangeRoom> for ChangeRoom {
-    fn parse_lurk_message(data: &[u8]) -> Result<(ChangeRoom, usize), String> {
+    fn parse_lurk_message(data: &[u8]) -> Result<(ChangeRoom, usize), ()> {
         let mut cursor = ReadBufferCursor::new(&data);
 
         match cursor.parse_u16l() {
             Ok(t) => Ok((ChangeRoom { room_number: t }, 2)),
-            Err(e) => Err(e),
+            Err(_) => Err(()),
         }
     }
 }
@@ -199,6 +233,7 @@ impl LurkMessageType for ChangeRoom {
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+#[derive(Default)]
 pub struct Fight;
 
 impl Fight {
@@ -208,7 +243,7 @@ impl Fight {
 }
 
 impl LurkMessageParse<Fight> for Fight {
-    fn parse_lurk_message(_: &[u8]) -> Result<(Fight, usize), String> {
+    fn parse_lurk_message(_: &[u8]) -> Result<(Fight, usize), ()> {
         Ok((Fight {}, 0))
     }
 }
@@ -243,12 +278,12 @@ impl PvpFight {
 }
 
 impl LurkMessageParse<PvpFight> for PvpFight {
-    fn parse_lurk_message(data: &[u8]) -> Result<(PvpFight, usize), String> {
+    fn parse_lurk_message(data: &[u8]) -> Result<(PvpFight, usize), ()> {
         let mut cursor = ReadBufferCursor::new(&data);
 
         match cursor.parse_string(NAME_LENGTH) {
             Ok(t) => Ok((PvpFight { target: t }, NAME_LENGTH as usize)),
-            Err(e) => Err(e),
+            Err(_) => Err(()),
         }
     }
 }
@@ -287,12 +322,12 @@ impl Loot {
 }
 
 impl LurkMessageParse<Loot> for Loot {
-    fn parse_lurk_message(data: &[u8]) -> Result<(Loot, usize), String> {
+    fn parse_lurk_message(data: &[u8]) -> Result<(Loot, usize), ()> {
         let mut cursor = ReadBufferCursor::new(&data);
 
         match cursor.parse_string(NAME_LENGTH) {
             Ok(t) => Ok((Loot { target: t }, NAME_LENGTH as usize)),
-            Err(e) => Err(e),
+            Err(_) => Err(()),
         }
     }
 }
@@ -316,6 +351,7 @@ impl LurkMessageType for Loot {
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+#[derive(Default)]
 pub struct Start;
 
 impl Start {
@@ -325,7 +361,7 @@ impl Start {
 }
 
 impl LurkMessageParse<Start> for Start {
-    fn parse_lurk_message(_: &[u8]) -> Result<(Start, usize), String> {
+    fn parse_lurk_message(_: &[u8]) -> Result<(Start, usize), ()> {
         Ok((Start {}, 0))
     }
 }
@@ -411,13 +447,13 @@ impl Error {
 }
 
 impl LurkMessageParse<Error> for Error {
-    fn parse_lurk_message(data: &[u8]) -> Result<(Error, usize), String> {
+    fn parse_lurk_message(data: &[u8]) -> Result<(Error, usize), ()> {
         let mut cursor = ReadBufferCursor::new(&data);
 
         let error_code = cursor.get_byte();
 
         if error_code.is_err() {
-            return Err(error_code.unwrap_err());
+            return Err(());
         }
 
         match cursor.parse_var_string() {
@@ -431,7 +467,7 @@ impl LurkMessageParse<Error> for Error {
                     bytes_read,
                 ))
             }
-            Err(e) => Err(e),
+            Err(_) => Err(()),
         }
     }
 }
@@ -467,12 +503,12 @@ impl Accept {
 }
 
 impl LurkMessageParse<Accept> for Accept {
-    fn parse_lurk_message(data: &[u8]) -> Result<(Accept, usize), String> {
+    fn parse_lurk_message(data: &[u8]) -> Result<(Accept, usize), ()> {
         let mut cursor = ReadBufferCursor::new(&data);
 
         match cursor.get_byte() {
             Ok(t) => Ok((Accept { action_type: t }, 1)),
-            Err(e) => Err(e),
+            Err(_) => Err(()),
         }
     }
 }
@@ -517,7 +553,7 @@ impl Room {
 }
 
 impl LurkMessageParse<Room> for Room {
-    fn parse_lurk_message(data: &[u8]) -> Result<(Room, usize), String> {
+    fn parse_lurk_message(data: &[u8]) -> Result<(Room, usize), ()> {
         let mut bytes_read = 0;
         let mut cursor = ReadBufferCursor::new(&data);
 
@@ -528,7 +564,7 @@ impl LurkMessageParse<Room> for Room {
         let description = cursor.parse_var_string();
 
         if room_number.is_err() || room_name.is_err() || description.is_err() {
-            return Err(String::from("Failed to parse room message."));
+            return Err(());
         }
 
         let desc = description.unwrap();
@@ -622,7 +658,7 @@ impl Character {
 }
 
 impl LurkMessageParse<Character> for Character {
-    fn parse_lurk_message(data: &[u8]) -> Result<(Character, usize), String> {
+    fn parse_lurk_message(data: &[u8]) -> Result<(Character, usize), ()> {
         let mut cursor = ReadBufferCursor::new(&data);
 
         let player_name = cursor.parse_string(NAME_LENGTH);
@@ -648,34 +684,33 @@ impl LurkMessageParse<Character> for Character {
             .check(&room_number)
             .check(&description);
 
-        match checker.success() {
-            true => {
-                let bit_field = BitField {
-                    field: flags.unwrap(),
-                };
-                let desc = description.unwrap();
-                let bytes_read: usize = NAME_LENGTH as usize + 1 + (2 * 7) + desc.len();
+        if checker.success() {
+            let bit_field = BitField {
+                field: flags.unwrap(),
+            };
+            let desc = description.unwrap();
+            let bytes_read: usize = NAME_LENGTH as usize + 1 + (2 * 7) + desc.len();
 
-                Ok((
-                    Character {
-                        player_name: player_name.unwrap(),
-                        is_alive: bit_field.get(7),
-                        join_battles: bit_field.get(6),
-                        is_monster: bit_field.get(5),
-                        is_started: bit_field.get(4),
-                        is_ready: bit_field.get(3),
-                        attack: attack.unwrap(),
-                        defense: defense.unwrap(),
-                        regeneration: regen.unwrap(),
-                        health: health.unwrap(),
-                        gold: gold.unwrap(),
-                        current_room_number: room_number.unwrap(),
-                        description: desc,
-                    },
-                    bytes_read,
-                ))
-            }
-            false => Err(String::from("Failed to parse character.")),
+            Ok((
+                Character {
+                    player_name: player_name.unwrap(),
+                    is_alive: bit_field.get(7),
+                    join_battles: bit_field.get(6),
+                    is_monster: bit_field.get(5),
+                    is_started: bit_field.get(4),
+                    is_ready: bit_field.get(3),
+                    attack: attack.unwrap(),
+                    defense: defense.unwrap(),
+                    regeneration: regen.unwrap(),
+                    health: health.unwrap(),
+                    gold: gold.unwrap(),
+                    current_room_number: room_number.unwrap(),
+                    description: desc,
+                },
+                bytes_read,
+            ))
+        } else {
+            Err(())
         }
     }
 }
@@ -736,7 +771,7 @@ impl Game {
 }
 
 impl LurkMessageParse<Game> for Game {
-    fn parse_lurk_message(data: &[u8]) -> Result<(Game, usize), String> {
+    fn parse_lurk_message(data: &[u8]) -> Result<(Game, usize), ()> {
         let mut cursor = ReadBufferCursor::new(&data);
 
         let initial_points = cursor.parse_u16l();
@@ -750,21 +785,20 @@ impl LurkMessageParse<Game> for Game {
             .check(&stat_limit)
             .check(&description);
 
-        match checker.success() {
-            true => {
-                let desc = description.unwrap();
-                let bytes_read = desc.len() + (2 * 3);
+        if checker.success() {
+            let desc = description.unwrap();
+            let bytes_read = desc.len() + (2 * 3);
 
-                Ok((
-                    Game {
-                        initial_points: initial_points.unwrap(),
-                        stat_limit: stat_limit.unwrap(),
-                        description: desc,
-                    },
-                    bytes_read,
-                ))
-            }
-            false => Err(String::from("Failed to parse game.")),
+            Ok((
+                Game {
+                    initial_points: initial_points.unwrap(),
+                    stat_limit: stat_limit.unwrap(),
+                    description: desc,
+                },
+                bytes_read,
+            ))
+        } else {
+            Err(())
         }
     }
 }
@@ -790,6 +824,7 @@ impl LurkMessageType for Game {
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+#[derive(Default)]
 pub struct Leave;
 
 impl Leave {
@@ -838,7 +873,7 @@ impl Connection {
 }
 
 impl LurkMessageParse<Connection> for Connection {
-    fn parse_lurk_message(data: &[u8]) -> Result<(Connection, usize), String> {
+    fn parse_lurk_message(data: &[u8]) -> Result<(Connection, usize), ()> {
         let mut cursor = ReadBufferCursor::new(&data);
 
         let room_number = cursor.parse_u16l();
@@ -852,20 +887,19 @@ impl LurkMessageParse<Connection> for Connection {
             .check(&room_name)
             .check(&description);
 
-        match checker.success() {
-            true => {
-                let desc = description.unwrap();
-                let bytes_read = desc.len() + NAME_LENGTH as usize + 2 + 2;
-                Ok((
-                    Connection {
-                        room_number: room_number.unwrap(),
-                        room_name: room_name.unwrap(),
-                        room_description: desc,
-                    },
-                    bytes_read,
-                ))
-            }
-            false => Err(String::from("Failed to parse connection.")),
+        if checker.success() {
+            let desc = description.unwrap();
+            let bytes_read = desc.len() + NAME_LENGTH as usize + 2 + 2;
+            Ok((
+                Connection {
+                    room_number: room_number.unwrap(),
+                    room_name: room_name.unwrap(),
+                    room_description: desc,
+                },
+                bytes_read,
+            ))
+        } else {
+            Err(())
         }
     }
 }

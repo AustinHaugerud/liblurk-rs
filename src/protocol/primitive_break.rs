@@ -1,3 +1,4 @@
+#[derive(Default)]
 pub struct OutputBuffer {
     pub data: Vec<u8>,
 }

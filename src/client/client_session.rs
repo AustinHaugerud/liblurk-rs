@@ -1,4 +1,4 @@
-use protocol::protocol_message::*;
+/*use protocol::protocol_message::*;
 use protocol::read::LurkReadChannel;
 use protocol::send::LurkSendChannel;
 use std::net::IpAddr;
@@ -109,4 +109,4 @@ impl ClientSession {
     pub fn get_send_channel(&mut self) -> LurkSendChannel<TcpStream> {
         LurkSendChannel::new(&mut self.stream)
     }
-}
+}*/
