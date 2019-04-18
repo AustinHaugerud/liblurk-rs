@@ -6,12 +6,14 @@ use uuid::Uuid;
 
 pub struct ServerClientStore {
     clients: Mutex<HashMap<Uuid, Arc<Mutex<ClientSession>>>>,
+    to_close : Mutex<Vec<Uuid>>,
 }
 
 impl ServerClientStore {
     pub fn new() -> ClientStore {
         Arc::new(ServerClientStore {
             clients: Mutex::new(HashMap::new()),
+            to_close: Mutex::new(vec![])
         })
     }
 
@@ -36,6 +38,7 @@ impl ServerClientStore {
 
     pub fn flag_close_client(&self, id: &Uuid) {
         if let Some(client) = self.acquire_lock().get_mut(id) {
+            self.to_close.lock().expect("flag_close_client poisoned thread").push(*id);
             client
                 .lock()
                 .expect("flag_close_client poisoned thread")
@@ -61,18 +64,10 @@ impl ServerClientStore {
         self.acquire_lock().insert(id, Arc::new(Mutex::new(client)));
     }
 
-    pub fn collect_close_flagged_ids(&self) -> Vec<Uuid> {
-        let mut ids = vec![];
-        for (id, client) in self.acquire_lock().iter() {
-            if !client
-                .lock()
-                .expect("collect_close_flagged_ids poisoned thread")
-                .is_running()
-            {
-                ids.push(id.clone());
-            }
-        }
-        ids
+    pub fn collect_close_ids(&self) -> Vec<Uuid> {
+        let result = self.to_close.lock().expect("").clone();
+        *self.to_close.lock().expect("") = vec![];
+        result
     }
 
     fn acquire_lock(&self) -> MutexGuard<HashMap<Uuid, Arc<Mutex<ClientSession>>>> {
