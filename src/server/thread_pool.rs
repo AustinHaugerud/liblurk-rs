@@ -37,6 +37,7 @@ where
 
     pub fn start_client(&self, id: &Uuid) -> Result<(), ()> {
         if !self.is_full() {
+            println!("Starting client session.");
             let client_store = self.client_store.clone();
             let write_context = self.write_context.clone();
             let callbacks = self.callbacks.clone();
@@ -44,6 +45,7 @@ where
             self.pool.install(move || {
                 while let Some(running) = client_store.check_client_running(id) {
                     if running {
+                        println!("Running");
                         client_store.update_client(id, callbacks.clone(), write_context.clone());
                     } else {
                         break;

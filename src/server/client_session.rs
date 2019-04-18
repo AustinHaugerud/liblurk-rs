@@ -106,6 +106,7 @@ impl ClientSession {
     where
         T: ServerCallbacks + Send,
     {
+        println!("Handling lurk message.");
         match kind {
             LurkMessageKind::Message => {
                 let (message, _) = Message::parse_lurk_message(data.as_slice())?;
