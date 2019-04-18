@@ -15,7 +15,7 @@ use std::sync::atomic::Ordering::Relaxed;
 
 pub struct Server<T>
 where
-    T: ServerCallbacks + Send,
+    T: 'static + ServerCallbacks + Send,
 {
     clients: ClientStore,
     callbacks: Callbacks<T>,
@@ -29,7 +29,7 @@ where
 
 impl<T> Server<T>
 where
-    T: ServerCallbacks + Send,
+    T: 'static + ServerCallbacks + Send,
 {
     pub fn create(
         addr: SocketAddr,
@@ -119,7 +119,7 @@ where
                             let write_context = self.write_context.clone();
                             let context = ServerEventContext::new(write_context, id);
                             self.thread_pool
-                                .start_client(&id)
+                                .start_client(id)
                                 .expect("Bug: Cannot add as client thread pool full.");
                             self.callbacks.on_connect(&context);
                         }

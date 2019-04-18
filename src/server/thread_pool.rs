@@ -8,7 +8,7 @@ use std::sync::atomic::Ordering::Relaxed;
 
 pub struct ClientThreadPool<T>
 where
-    T: ServerCallbacks + Send,
+    T: 'static + ServerCallbacks + Send,
 {
     pool: ThreadPool,
     client_store: ClientStore,
@@ -20,7 +20,7 @@ where
 
 impl<T> ClientThreadPool<T>
 where
-    T: ServerCallbacks + Send,
+    T: 'static + ServerCallbacks + Send,
 {
     pub fn new(
         client_store: ClientStore,
@@ -39,18 +39,18 @@ where
         })
     }
 
-    pub fn start_client(&mut self, id: &Uuid) -> Result<(), ()> {
+    pub fn start_client(&mut self, id: Uuid) -> Result<(), ()> {
         if !self.is_full() {
             let client_store = self.client_store.clone();
             let write_context = self.write_context.clone();
             let callbacks = self.callbacks.clone();
             let num_active = self.num_active.clone();
 
-            self.pool.install(move || {
+            self.pool.spawn(move || {
                 num_active.fetch_add(1, Relaxed);
-                while let Some(running) = client_store.check_client_running(id) {
+                while let Some(running) = client_store.check_client_running(&id) {
                     if running {
-                        client_store.update_client(id, callbacks.clone(), write_context.clone());
+                        client_store.update_client(&id, callbacks.clone(), write_context.clone());
                     } else {
                         break;
                     }
