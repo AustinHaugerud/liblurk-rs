@@ -2,15 +2,15 @@ use rayon::{ThreadPool, ThreadPoolBuildError, ThreadPoolBuilder};
 use server::callbacks::{Callbacks, ServerCallbacks};
 use server::client_store::ClientStore;
 use server::server_access::WriteContext;
-use uuid::Uuid;
-use std::sync::{Arc, atomic::AtomicUsize};
 use std::sync::atomic::Ordering::Relaxed;
+use std::sync::{atomic::AtomicUsize, Arc};
+use uuid::Uuid;
 
 pub struct ClientThreadPool<T>
 where
     T: 'static + ServerCallbacks + Send,
 {
-    //pool: ThreadPool,
+    pool: ThreadPool,
     client_store: ClientStore,
     write_context: WriteContext,
     callbacks: Callbacks<T>,
@@ -28,10 +28,10 @@ where
         callbacks: Callbacks<T>,
         size: usize,
     ) -> Result<ClientThreadPool<T>, ThreadPoolBuildError> {
-        //let pool = ThreadPoolBuilder::new().num_threads(size).build()?;
+        let pool = ThreadPoolBuilder::new().num_threads(size).build()?;
         Ok(ClientThreadPool {
             max_threads: size,
-            //pool,
+            pool,
             client_store,
             write_context,
             callbacks,
@@ -45,18 +45,17 @@ where
             let write_context = self.write_context.clone();
             let callbacks = self.callbacks.clone();
             let num_active = self.num_active.clone();
+            let monitor = self
+                .client_store
+                .get_client_running_monitor(&id)
+                .unwrap_or_else(|| panic!("start_client bug, client {:?} does not exist.", id));
 
-            rayon::spawn(move || {
+            self.pool.spawn(move || {
                 num_active.fetch_add(1, Relaxed);
-                while let Some(running) = client_store.check_client_running(&id) {
-                    if running {
-                        client_store.update_client(&id, callbacks.clone(), write_context.clone());
-                    } else {
-                        break;
-                    }
+                while monitor.is_running() {
+                    client_store.update_client(&id, callbacks.clone(), write_context.clone());
                 }
                 num_active.fetch_sub(1, Relaxed);
-
             });
 
             Ok(())

@@ -1,6 +1,6 @@
 use protocol::protocol_message::LurkMessageBlobify;
 use server::callbacks::{Callbacks, ServerCallbacks};
-use server::client_session::ClientSession;
+use server::client_session::{ClientSession, RunningMonitor};
 use server::server_access::WriteContext;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -50,9 +50,9 @@ impl ServerClientStore {
         }
     }
 
-    pub fn check_client_running(&self, id: &Uuid) -> Option<bool> {
+    pub fn get_client_running_monitor(&self, id: &Uuid) -> Option<RunningMonitor> {
         if let Some(client) = self.acquire_lock().get(id) {
-            Some(client.is_running())
+            Some(client.get_running_monitor())
         } else {
             None
         }

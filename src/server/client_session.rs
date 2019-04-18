@@ -7,12 +7,25 @@ use server::callbacks::{Callbacks, ServerCallbacks};
 use server::context::ServerEventContext;
 use server::server_access::WriteContext;
 use std::net::{Shutdown, TcpStream};
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering::Relaxed;
+use std::sync::Arc;
 use uuid::Uuid;
+
+pub struct RunningMonitor {
+    keep_open: Arc<AtomicBool>,
+}
+
+impl RunningMonitor {
+    pub fn is_running(&self) -> bool {
+        self.keep_open.load(Relaxed)
+    }
+}
 
 pub struct ClientSession {
     id: Uuid,
     stream: TcpStream,
-    keep_open: bool,
+    keep_open: Arc<AtomicBool>,
 }
 
 impl ClientSession {
@@ -23,7 +36,7 @@ impl ClientSession {
         ClientSession {
             id: Uuid::new_v4(),
             stream,
-            keep_open: true,
+            keep_open: Arc::new(AtomicBool::new(true)),
         }
     }
 
@@ -32,7 +45,7 @@ impl ClientSession {
     }
 
     pub fn shutdown(&mut self) {
-        self.keep_open = false;
+        self.flag_close();
 
         if self.stream.shutdown(Shutdown::Both).is_err() {
             println!("Failed to shutdown TCP Stream.");
@@ -44,18 +57,24 @@ impl ClientSession {
     }
 
     pub fn flag_close(&mut self) {
-        self.keep_open = false;
+        self.keep_open.store(false, Relaxed)
     }
 
     pub fn is_running(&self) -> bool {
-        self.keep_open
+        self.keep_open.load(Relaxed)
+    }
+
+    pub fn get_running_monitor(&self) -> RunningMonitor {
+        RunningMonitor {
+            keep_open: self.keep_open.clone(),
+        }
     }
 
     pub fn update<T>(&mut self, callbacks: Callbacks<T>, write_context: WriteContext)
     where
         T: ServerCallbacks + Send,
     {
-        if self.keep_open {
+        if self.is_running() {
             match self.pull_client_message() {
                 Ok(op_data) => {
                     if let Some(data) = op_data {
@@ -68,13 +87,13 @@ impl ClientSession {
                             )
                             .is_ok();
 
-                        self.keep_open = is_ok;
+                        self.keep_open.store(is_ok, Relaxed);
                     } else {
-                        self.keep_open = false;
+                        self.flag_close();
                     }
                 }
                 Err(_) => {
-                    self.keep_open = false;
+                    self.flag_close();
                 }
             }
         }
@@ -135,7 +154,7 @@ impl ClientSession {
                 callbacks.on_character(&context, &character);
             }
             LurkMessageKind::Leave => {
-                self.keep_open = false;
+                self.flag_close();
                 callbacks.on_leave(&context);
             }
             _ => panic!(

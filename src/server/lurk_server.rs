@@ -126,7 +126,6 @@ where
                     }
                     Err(e) => {
                         if e.kind() == io::ErrorKind::WouldBlock {
-
                             break;
                         } else {
                             self.running.store(false, Relaxed);
