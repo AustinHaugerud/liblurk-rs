@@ -3,7 +3,8 @@ use server::callbacks::{Callbacks, ServerCallbacks};
 use server::client_store::ClientStore;
 use server::server_access::WriteContext;
 use std::sync::atomic::Ordering::Relaxed;
-use std::sync::{atomic::AtomicUsize, Arc};
+use std::sync::mpsc::TryRecvError;
+use std::sync::{atomic::AtomicUsize, mpsc::Receiver, Arc};
 use uuid::Uuid;
 
 pub struct ClientThreadPool<T>
@@ -39,22 +40,27 @@ where
         })
     }
 
-    pub fn start_client(&mut self, id: Uuid) -> Result<(), ()> {
+    pub fn start_client(&mut self, id: Uuid, close_channel_rx: Receiver<()>) -> Result<(), ()> {
         if !self.is_full() {
             let client_store = self.client_store.clone();
             let write_context = self.write_context.clone();
             let callbacks = self.callbacks.clone();
             let num_active = self.num_active.clone();
-            let monitor = self
-                .client_store
-                .get_client_running_monitor(&id)
-                .unwrap_or_else(|| panic!("start_client bug, client {:?} does not exist.", id));
 
             self.pool.spawn(move || {
                 num_active.fetch_add(1, Relaxed);
-                while monitor.is_running() {
-                    client_store.update_client(&id, callbacks.clone(), write_context.clone());
+
+                loop {
+                    match close_channel_rx.try_recv() {
+                        Ok(_) | Err(TryRecvError::Disconnected) => break,
+                        Err(TryRecvError::Empty) => client_store.update_client(
+                            &id,
+                            callbacks.clone(),
+                            write_context.clone(),
+                        ),
+                    }
                 }
+
                 num_active.fetch_sub(1, Relaxed);
             });
 

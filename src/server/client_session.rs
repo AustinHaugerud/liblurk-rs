@@ -9,27 +9,19 @@ use server::server_access::WriteContext;
 use std::net::{Shutdown, TcpStream};
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
+use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use uuid::Uuid;
-
-pub struct RunningMonitor {
-    keep_open: Arc<AtomicBool>,
-}
-
-impl RunningMonitor {
-    pub fn is_running(&self) -> bool {
-        self.keep_open.load(Relaxed)
-    }
-}
 
 pub struct ClientSession {
     id: Uuid,
     stream: TcpStream,
     keep_open: Arc<AtomicBool>,
+    close_transmitter: Sender<()>,
 }
 
 impl ClientSession {
-    pub fn new(stream: TcpStream) -> ClientSession {
+    pub fn new(stream: TcpStream, close_transmitter: Sender<()>) -> ClientSession {
         // Read timeout needs to be set so that clients can eventually
         // timeout and be closed if inactive too long.
         debug_assert!(stream.read_timeout().unwrap().is_some());
@@ -37,6 +29,7 @@ impl ClientSession {
             id: Uuid::new_v4(),
             stream,
             keep_open: Arc::new(AtomicBool::new(true)),
+            close_transmitter,
         }
     }
 
@@ -50,6 +43,8 @@ impl ClientSession {
         if self.stream.shutdown(Shutdown::Both).is_err() {
             println!("Failed to shutdown TCP Stream.");
         }
+
+        self.close_transmitter.send(()).expect("Bug: Client thread terminated prematurely.");
     }
 
     pub fn get_send_channel(&mut self) -> LurkSendChannel<TcpStream> {
@@ -62,12 +57,6 @@ impl ClientSession {
 
     pub fn is_running(&self) -> bool {
         self.keep_open.load(Relaxed)
-    }
-
-    pub fn get_running_monitor(&self) -> RunningMonitor {
-        RunningMonitor {
-            keep_open: self.keep_open.clone(),
-        }
     }
 
     pub fn update<T>(&mut self, callbacks: Callbacks<T>, write_context: WriteContext)

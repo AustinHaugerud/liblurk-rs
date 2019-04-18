@@ -12,6 +12,7 @@ use server::thread_pool::ClientThreadPool;
 use server::timing::Clock;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
+use std::sync::mpsc::channel;
 
 pub struct Server<T>
 where
@@ -113,13 +114,14 @@ where
                         let success = socket.set_read_timeout(Some(self.read_timeout)).is_ok();
 
                         if success {
-                            let client = ClientSession::new(socket);
+                            let (sender, receiver) = channel();
+                            let client = ClientSession::new(socket, sender);
                             let id = *client.get_id();
                             self.clients.add_client(client);
                             let write_context = self.write_context.clone();
                             let context = ServerEventContext::new(write_context, id);
                             self.thread_pool
-                                .start_client(id)
+                                .start_client(id, receiver)
                                 .expect("Bug: Cannot add as client thread pool full.");
                             self.callbacks.on_connect(&context);
                         }
