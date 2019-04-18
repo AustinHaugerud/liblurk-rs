@@ -132,6 +132,7 @@ where
                     }
                     Err(e) => {
                         if e.kind() == io::ErrorKind::WouldBlock {
+                            println!("Exit accept connections.");
                             break;
                         } else {
                             println!("Listener encountered IO error.");
