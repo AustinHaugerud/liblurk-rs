@@ -78,7 +78,10 @@ impl ClientSession {
                             )
                             .is_ok();
 
-                        self.keep_open.store(is_ok, Relaxed);
+                        if is_ok == false {
+                            self.flag_close();
+                        }
+
                     } else {
                         self.flag_close();
                     }
