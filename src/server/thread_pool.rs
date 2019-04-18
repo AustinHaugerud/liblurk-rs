@@ -29,7 +29,7 @@ where
         callbacks: Callbacks<T>,
         size: usize,
     ) -> Result<ClientThreadPool<T>, ThreadPoolBuildError> {
-        let pool = ThreadPoolBuilder::new().num_threads(size).build()?;
+        let pool = ThreadPoolBuilder::new().num_threads(size * 2).build()?;
         Ok(ClientThreadPool {
             max_threads: size,
             pool,
@@ -46,6 +46,9 @@ where
             let write_context = self.write_context.clone();
             let callbacks = self.callbacks.clone();
             let num_active = self.num_active.clone();
+            let client = client_store
+                .get_client(&id)
+                .unwrap_or_else(|| panic!("Bug: start_client client {:?} does not exist.", id));
 
             self.pool.spawn(move || {
                 num_active.fetch_add(1, Relaxed);
@@ -53,11 +56,11 @@ where
                 loop {
                     match close_channel_rx.try_recv() {
                         Ok(_) | Err(TryRecvError::Disconnected) => break,
-                        Err(TryRecvError::Empty) => client_store.update_client(
-                            &id,
-                            callbacks.clone(),
-                            write_context.clone(),
-                        ),
+
+                        Err(TryRecvError::Empty) => client
+                            .lock()
+                            .expect("start_client closure: update poisoned thread.")
+                            .update(callbacks.clone(), write_context.clone()),
                     }
                 }
 

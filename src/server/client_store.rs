@@ -1,13 +1,11 @@
 use protocol::protocol_message::LurkMessageBlobify;
-use server::callbacks::{Callbacks, ServerCallbacks};
 use server::client_session::ClientSession;
-use server::server_access::WriteContext;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 use uuid::Uuid;
 
 pub struct ServerClientStore {
-    clients: Mutex<HashMap<Uuid, ClientSession>>,
+    clients: Mutex<HashMap<Uuid, Arc<Mutex<ClientSession>>>>,
 }
 
 impl ServerClientStore {
@@ -22,31 +20,35 @@ impl ServerClientStore {
         F: LurkMessageBlobify + Send + ?Sized,
     {
         if let Some(client) = self.acquire_lock().get_mut(id) {
-            let mut send_channel = client.get_send_channel();
+            let mut lock = client
+                .lock()
+                .expect("write_client client lock thread poisoned");
+            let mut send_channel = lock.get_send_channel();
             send_channel.write_message(packet)
         } else {
             Err(())
         }
     }
 
+    pub fn get_client(&self, id: &Uuid) -> Option<Arc<Mutex<ClientSession>>> {
+        self.acquire_lock().get(id).cloned()
+    }
+
     pub fn flag_close_client(&self, id: &Uuid) {
         if let Some(client) = self.acquire_lock().get_mut(id) {
-            client.flag_close();
+            client
+                .lock()
+                .expect("flag_close_client poisoned thread")
+                .flag_close();
         }
     }
 
     pub fn shutdown_client(&self, id: &Uuid) {
         if let Some(client) = self.acquire_lock().get_mut(id) {
-            client.shutdown();
-        }
-    }
-
-    pub fn update_client<T>(&self, id: &Uuid, callbacks: Callbacks<T>, write_context: WriteContext)
-    where
-        T: ServerCallbacks + Send,
-    {
-        if let Some(client) = self.acquire_lock().get_mut(id) {
-            client.update(callbacks, write_context);
+            client
+                .lock()
+                .expect("shutdown_client poisoned thread")
+                .shutdown();
         }
     }
 
@@ -56,20 +58,24 @@ impl ServerClientStore {
 
     pub fn add_client(&self, client: ClientSession) {
         let id = *client.get_id();
-        self.acquire_lock().insert(id, client);
+        self.acquire_lock().insert(id, Arc::new(Mutex::new(client)));
     }
 
     pub fn collect_close_flagged_ids(&self) -> Vec<Uuid> {
         let mut ids = vec![];
         for (id, client) in self.acquire_lock().iter() {
-            if !client.is_running() {
+            if !client
+                .lock()
+                .expect("collect_close_flagged_ids poisoned thread")
+                .is_running()
+            {
                 ids.push(id.clone());
             }
         }
         ids
     }
 
-    fn acquire_lock(&self) -> MutexGuard<HashMap<Uuid, ClientSession>> {
+    fn acquire_lock(&self) -> MutexGuard<HashMap<Uuid, Arc<Mutex<ClientSession>>>> {
         self.clients
             .lock()
             .expect("ServerClientStore - Poisoned thread.")

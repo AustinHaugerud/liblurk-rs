@@ -44,7 +44,9 @@ impl ClientSession {
             println!("Failed to shutdown TCP Stream.");
         }
 
-        self.close_transmitter.send(()).expect("Bug: Client thread terminated prematurely.");
+        self.close_transmitter
+            .send(())
+            .expect("Bug: Client thread terminated prematurely.");
     }
 
     pub fn get_send_channel(&mut self) -> LurkSendChannel<TcpStream> {
