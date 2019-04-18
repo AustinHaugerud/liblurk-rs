@@ -114,15 +114,20 @@ where
                         let success = socket.set_read_timeout(Some(self.read_timeout)).is_ok();
 
                         if success {
+                            println!("Setting up client.");
                             let (sender, receiver) = channel();
                             let client = ClientSession::new(socket, sender);
                             let id = *client.get_id();
+                            println!("Adding to store.");
                             self.clients.add_client(client);
+                            println!("Added.");
                             let write_context = self.write_context.clone();
                             let context = ServerEventContext::new(write_context, id);
+                            println!("Installing to thread pool.");
                             self.thread_pool
                                 .start_client(id, receiver)
                                 .expect("Bug: Cannot add as client thread pool full.");
+                            println!("Installed.");
                             self.callbacks.on_connect(&context);
                         }
                     }
