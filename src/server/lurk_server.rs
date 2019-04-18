@@ -106,20 +106,16 @@ where
 
     fn accept_connections(&mut self) {
         use std::io;
-        println!("Accept connections.");
         loop {
             if !self.thread_pool.is_full() {
                 match self.listener.accept() {
                     Ok((socket, _)) => {
-                        println!("Accepted connection.");
                         let success = socket.set_read_timeout(Some(self.read_timeout)).is_ok();
 
                         if success {
-                            println!("Successfully set timeout.");
                             let client = ClientSession::new(socket);
                             let id = *client.get_id();
                             self.clients.add_client(client);
-                            println!("Added client to store.");
                             let write_context = self.write_context.clone();
                             let context = ServerEventContext::new(write_context, id);
                             self.thread_pool
@@ -127,30 +123,22 @@ where
                                 .expect("Bug: Cannot add as client thread pool full.");
                             self.callbacks.on_connect(&context);
                         }
-                        else {
-                            println!("Cannot add client, failed to set timeout.");
-                        }
                     }
                     Err(e) => {
-                        println!("Could not accept connection.");
                         if e.kind() == io::ErrorKind::WouldBlock {
-                            println!("Exit accept connections.");
                             break;
                         } else {
-                            println!("Listener encountered IO error.");
                             self.running.store(false, Relaxed);
                         }
                     }
                 }
             } else {
-                println!("Thread pool is full.");
                 break;
             }
         }
     }
 
     fn process_write_queue(&mut self) {
-        println!("Process write queue.");
         while let Some(write_item) = self.write_context.write_queue.pop_message() {
             let packet = write_item.packet.as_ref();
             let target = write_item.target;
@@ -162,7 +150,6 @@ where
     }
 
     fn clean_client_store(&mut self) {
-        println!("Clean client store.");
         let to_close = self.clients.collect_close_flagged_ids();
 
         for id in to_close {

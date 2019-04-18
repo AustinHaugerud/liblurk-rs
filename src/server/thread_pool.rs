@@ -3,6 +3,8 @@ use server::callbacks::{Callbacks, ServerCallbacks};
 use server::client_store::ClientStore;
 use server::server_access::WriteContext;
 use uuid::Uuid;
+use std::sync::{Arc, atomic::AtomicUsize};
+use std::sync::atomic::Ordering::Relaxed;
 
 pub struct ClientThreadPool<T>
 where
@@ -13,6 +15,7 @@ where
     write_context: WriteContext,
     callbacks: Callbacks<T>,
     max_threads: usize,
+    num_active: Arc<AtomicUsize>,
 }
 
 impl<T> ClientThreadPool<T>
@@ -32,25 +35,28 @@ where
             client_store,
             write_context,
             callbacks,
+            num_active: Arc::new(AtomicUsize::new(0)),
         })
     }
 
-    pub fn start_client(&self, id: &Uuid) -> Result<(), ()> {
+    pub fn start_client(&mut self, id: &Uuid) -> Result<(), ()> {
         if !self.is_full() {
-            println!("Starting client session.");
             let client_store = self.client_store.clone();
             let write_context = self.write_context.clone();
             let callbacks = self.callbacks.clone();
+            let num_active = self.num_active.clone();
 
             self.pool.install(move || {
+                num_active.fetch_add(1, Relaxed);
                 while let Some(running) = client_store.check_client_running(id) {
                     if running {
-                        println!("Running");
                         client_store.update_client(id, callbacks.clone(), write_context.clone());
                     } else {
                         break;
                     }
                 }
+                num_active.fetch_sub(1, Relaxed);
+
             });
 
             Ok(())
@@ -60,6 +66,6 @@ where
     }
 
     pub fn is_full(&self) -> bool {
-        self.pool.current_num_threads() == self.max_threads
+        self.num_active.load(Relaxed) == self.max_threads
     }
 }
