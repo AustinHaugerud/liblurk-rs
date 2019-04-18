@@ -89,12 +89,16 @@ where
             }
 
             self.accept_connections();
+            println!("Accepted connections.");
 
             self.callbacks.update(self.write_context.clone());
+            println!("Ran update callback.");
 
             self.process_write_queue();
+            println!("Process write queue.");
 
             self.clean_client_store();
+            println!("Cleaned client store.");
 
             let time = clock.get_elapsed();
 
@@ -106,6 +110,7 @@ where
 
     fn accept_connections(&mut self) {
         use std::io;
+        println!("Accept connections.");
         loop {
             if !self.thread_pool.is_full() {
                 match self.listener.accept() {
@@ -147,6 +152,7 @@ where
     }
 
     fn process_write_queue(&mut self) {
+        println!("Process write queue.");
         while let Some(write_item) = self.write_context.write_queue.pop_message() {
             let packet = write_item.packet.as_ref();
             let target = write_item.target;
@@ -158,6 +164,7 @@ where
     }
 
     fn clean_client_store(&mut self) {
+        println!("Clean client store.");
         let to_close = self.clients.collect_close_flagged_ids();
 
         for id in to_close {
