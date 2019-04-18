@@ -17,11 +17,10 @@ pub struct ClientSession {
     id: Uuid,
     stream: TcpStream,
     keep_open: Arc<AtomicBool>,
-    close_transmitter: Sender<()>,
 }
 
 impl ClientSession {
-    pub fn new(stream: TcpStream, close_transmitter: Sender<()>) -> ClientSession {
+    pub fn new(stream: TcpStream) -> ClientSession {
         // Read timeout needs to be set so that clients can eventually
         // timeout and be closed if inactive too long.
         debug_assert!(stream.read_timeout().unwrap().is_some());
@@ -29,7 +28,6 @@ impl ClientSession {
             id: Uuid::new_v4(),
             stream,
             keep_open: Arc::new(AtomicBool::new(true)),
-            close_transmitter,
         }
     }
 
@@ -43,10 +41,6 @@ impl ClientSession {
         if self.stream.shutdown(Shutdown::Both).is_err() {
             println!("Failed to shutdown TCP Stream.");
         }
-
-        self.close_transmitter
-            .send(())
-            .expect("Bug: Client thread terminated prematurely.");
     }
 
     pub fn get_send_channel(&mut self) -> LurkSendChannel<TcpStream> {

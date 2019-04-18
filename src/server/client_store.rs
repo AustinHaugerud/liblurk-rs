@@ -3,9 +3,11 @@ use server::client_session::ClientSession;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 use uuid::Uuid;
+use std::sync::mpsc::Sender;
 
 pub struct ServerClientStore {
     clients: Mutex<HashMap<Uuid, Arc<Mutex<ClientSession>>>>,
+    close_transmitters: Mutex<HashMap<Uuid, Sender<()>>>,
     to_close : Mutex<Vec<Uuid>>,
 }
 
@@ -13,7 +15,8 @@ impl ServerClientStore {
     pub fn new() -> ClientStore {
         Arc::new(ServerClientStore {
             clients: Mutex::new(HashMap::new()),
-            to_close: Mutex::new(vec![])
+            to_close: Mutex::new(vec![]),
+            close_transmitters: Mutex::new(HashMap::new())
         })
     }
 
@@ -48,6 +51,10 @@ impl ServerClientStore {
 
     pub fn shutdown_client(&self, id: &Uuid) {
         if let Some(client) = self.acquire_lock().get_mut(id) {
+
+            self.close_transmitters.lock().expect("shutdown_client poisoned thread").get(&id)
+                .expect("").send(()).expect("Bug: shutdown_client transmit close failure.");
+
             client
                 .lock()
                 .expect("shutdown_client poisoned thread")
@@ -59,8 +66,9 @@ impl ServerClientStore {
         self.acquire_lock().remove(&id);
     }
 
-    pub fn add_client(&self, client: ClientSession) {
+    pub fn add_client(&self, client: ClientSession, tx : Sender<()>) {
         let id = *client.get_id();
+        self.close_transmitters.lock().expect("").insert(id, tx);
         self.acquire_lock().insert(id, Arc::new(Mutex::new(client)));
     }
 
