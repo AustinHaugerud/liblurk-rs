@@ -89,16 +89,12 @@ where
             }
 
             self.accept_connections();
-            println!("Accepted connections.");
 
             self.callbacks.update(self.write_context.clone());
-            println!("Ran update callback.");
 
             self.process_write_queue();
-            println!("Process write queue.");
 
             self.clean_client_store();
-            println!("Cleaned client store.");
 
             let time = clock.get_elapsed();
 
@@ -136,6 +132,7 @@ where
                         }
                     }
                     Err(e) => {
+                        println!("Could not accept connection.");
                         if e.kind() == io::ErrorKind::WouldBlock {
                             println!("Exit accept connections.");
                             break;
