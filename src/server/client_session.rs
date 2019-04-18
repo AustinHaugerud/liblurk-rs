@@ -53,6 +53,7 @@ impl ClientSession {
     }
 
     pub fn flag_close(&mut self) {
+        self.close_transmitter.send(()).ok();
         self.keep_open.store(false, Relaxed)
     }
 
