@@ -42,6 +42,7 @@ impl ServerClientStore {
     pub fn flag_close_client(&self, id: &Uuid) {
         if let Some(client) = self.acquire_lock().get_mut(id) {
             self.to_close.lock().expect("flag_close_client poisoned thread").push(*id);
+            self.transmit_client_close(&id);
             client
                 .lock()
                 .expect("flag_close_client poisoned thread")
@@ -51,10 +52,7 @@ impl ServerClientStore {
 
     pub fn shutdown_client(&self, id: &Uuid) {
         if let Some(client) = self.acquire_lock().get_mut(id) {
-
-            self.close_transmitters.lock().expect("shutdown_client poisoned thread").get(&id)
-                .expect("").send(()).expect("Bug: shutdown_client transmit close failure.");
-
+            self.transmit_client_close(&id);
             client
                 .lock()
                 .expect("shutdown_client poisoned thread")
@@ -76,6 +74,12 @@ impl ServerClientStore {
         let result = self.to_close.lock().expect("").clone();
         *self.to_close.lock().expect("") = vec![];
         result
+    }
+
+    fn transmit_client_close(&self, id : &Uuid) {
+        if let Some(tx) = self.close_transmitters.lock().unwrap().get(&id) {
+            tx.send(()).ok();
+        }
     }
 
     fn acquire_lock(&self) -> MutexGuard<HashMap<Uuid, Arc<Mutex<ClientSession>>>> {

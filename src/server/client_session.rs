@@ -17,10 +17,11 @@ pub struct ClientSession {
     id: Uuid,
     stream: TcpStream,
     keep_open: Arc<AtomicBool>,
+    close_transmitter: Sender<()>,
 }
 
 impl ClientSession {
-    pub fn new(stream: TcpStream) -> ClientSession {
+    pub fn new(stream: TcpStream, close_tx : Sender<()>) -> ClientSession {
         // Read timeout needs to be set so that clients can eventually
         // timeout and be closed if inactive too long.
         debug_assert!(stream.read_timeout().unwrap().is_some());
@@ -28,6 +29,7 @@ impl ClientSession {
             id: Uuid::new_v4(),
             stream,
             keep_open: Arc::new(AtomicBool::new(true)),
+            close_transmitter: close_tx
         }
     }
 
@@ -36,6 +38,9 @@ impl ClientSession {
     }
 
     pub fn shutdown(&mut self) {
+
+        self.close_transmitter.send(()).ok();
+
         self.flag_close();
 
         if self.stream.shutdown(Shutdown::Both).is_err() {

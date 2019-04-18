@@ -115,7 +115,7 @@ where
 
                         if success {
                             let (sender, receiver) = channel();
-                            let client = ClientSession::new(socket);
+                            let client = ClientSession::new(socket, sender.clone());
                             let id = *client.get_id();
                             self.clients.add_client(client, sender);
                             let write_context = self.write_context.clone();
