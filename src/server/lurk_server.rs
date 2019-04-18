@@ -110,18 +110,24 @@ where
             if !self.thread_pool.is_full() {
                 match self.listener.accept() {
                     Ok((socket, _)) => {
+                        println!("Accepted connection.");
                         let success = socket.set_read_timeout(Some(self.read_timeout)).is_ok();
 
                         if success {
+                            println!("Successfully set timeout.");
                             let client = ClientSession::new(socket);
                             let id = *client.get_id();
                             self.clients.add_client(client);
+                            println!("Added client to store.");
                             let write_context = self.write_context.clone();
                             let context = ServerEventContext::new(write_context, id);
                             self.thread_pool
                                 .start_client(&id)
                                 .expect("Bug: Cannot add as client thread pool full.");
                             self.callbacks.on_connect(&context);
+                        }
+                        else {
+                            println!("Cannot add client, failed to set timeout.");
                         }
                     }
                     Err(e) => {
