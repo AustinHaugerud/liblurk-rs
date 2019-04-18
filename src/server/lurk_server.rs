@@ -89,12 +89,16 @@ where
                 break;
             }
 
+            println!("Accepting connections.");
             self.accept_connections();
 
+            println!("Update.");
             self.callbacks.update(self.write_context.clone());
 
+            println!("Process write queue.");
             self.process_write_queue();
 
+            println!("Clean client store.");
             self.clean_client_store();
 
             let time = clock.get_elapsed();
