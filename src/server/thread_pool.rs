@@ -10,7 +10,7 @@ pub struct ClientThreadPool<T>
 where
     T: 'static + ServerCallbacks + Send,
 {
-    pool: ThreadPool,
+    //pool: ThreadPool,
     client_store: ClientStore,
     write_context: WriteContext,
     callbacks: Callbacks<T>,
@@ -28,10 +28,10 @@ where
         callbacks: Callbacks<T>,
         size: usize,
     ) -> Result<ClientThreadPool<T>, ThreadPoolBuildError> {
-        let pool = ThreadPoolBuilder::new().num_threads(size).build()?;
+        //let pool = ThreadPoolBuilder::new().num_threads(size).build()?;
         Ok(ClientThreadPool {
             max_threads: size,
-            pool,
+            //pool,
             client_store,
             write_context,
             callbacks,
@@ -46,7 +46,7 @@ where
             let callbacks = self.callbacks.clone();
             let num_active = self.num_active.clone();
 
-            self.pool.spawn(move || {
+            rayon::spawn(move || {
                 num_active.fetch_add(1, Relaxed);
                 while let Some(running) = client_store.check_client_running(&id) {
                     if running {
