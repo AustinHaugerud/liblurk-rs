@@ -41,16 +41,20 @@ where
     }
 
     pub fn start_client(&mut self, id: Uuid, close_channel_rx: Receiver<()>) -> Result<(), ()> {
+        println!("Starting client.");
         if !self.is_full() {
             let client_store = self.client_store.clone();
             let write_context = self.write_context.clone();
             let callbacks = self.callbacks.clone();
             let num_active = self.num_active.clone();
+            println!("Getting client from store.");
             let client = client_store
                 .get_client(&id)
                 .unwrap_or_else(|| panic!("Bug: start_client client {:?} does not exist.", id));
+            println!("Acquired.");
 
             self.pool.spawn(move || {
+                println!("Spawned.");
                 num_active.fetch_add(1, Relaxed);
 
                 loop {
