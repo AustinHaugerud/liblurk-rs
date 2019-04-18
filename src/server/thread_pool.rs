@@ -36,7 +36,7 @@ where
     }
 
     pub fn start_client(&self, id: &Uuid) -> Result<(), ()> {
-        if self.is_full() {
+        if !self.is_full() {
             let client_store = self.client_store.clone();
             let write_context = self.write_context.clone();
             let callbacks = self.callbacks.clone();
