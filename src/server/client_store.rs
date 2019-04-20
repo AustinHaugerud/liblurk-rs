@@ -1,14 +1,14 @@
 use protocol::protocol_message::LurkMessageBlobify;
 use server::client_session::ClientSession;
 use std::collections::HashMap;
+use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex, MutexGuard};
 use uuid::Uuid;
-use std::sync::mpsc::Sender;
 
 pub struct ServerClientStore {
     clients: Mutex<HashMap<Uuid, Arc<Mutex<ClientSession>>>>,
     close_transmitters: Mutex<HashMap<Uuid, Sender<()>>>,
-    to_close : Mutex<Vec<Uuid>>,
+    to_close: Mutex<Vec<Uuid>>,
 }
 
 impl ServerClientStore {
@@ -16,7 +16,7 @@ impl ServerClientStore {
         Arc::new(ServerClientStore {
             clients: Mutex::new(HashMap::new()),
             to_close: Mutex::new(vec![]),
-            close_transmitters: Mutex::new(HashMap::new())
+            close_transmitters: Mutex::new(HashMap::new()),
         })
     }
 
@@ -41,7 +41,10 @@ impl ServerClientStore {
 
     pub fn flag_close_client(&self, id: &Uuid) {
         if let Some(client) = self.acquire_lock().get_mut(id) {
-            self.to_close.lock().expect("flag_close_client poisoned thread").push(*id);
+            self.to_close
+                .lock()
+                .expect("flag_close_client poisoned thread")
+                .push(*id);
             self.transmit_client_close(&id);
             client
                 .lock()
@@ -51,9 +54,12 @@ impl ServerClientStore {
     }
 
     pub fn alert_close_client(&self, id: &Uuid) {
-        if let Some(client) = self.acquire_lock().get_mut(id) {
-            self.to_close.lock().expect("alert_close_client poisoned thread").push(*id);
-            self.transmit_client_close(&id);
+        if self.acquire_lock().contains_key(id) {
+            self.to_close
+                .lock()
+                .expect("alert_close_client poisoned thread")
+                .push(*id);
+            self.transmit_client_close(id);
         }
     }
 
@@ -71,7 +77,7 @@ impl ServerClientStore {
         self.acquire_lock().remove(&id);
     }
 
-    pub fn add_client(&self, client: ClientSession, tx : Sender<()>) {
+    pub fn add_client(&self, client: ClientSession, tx: Sender<()>) {
         let id = *client.get_id();
         self.close_transmitters.lock().expect("").insert(id, tx);
         self.acquire_lock().insert(id, Arc::new(Mutex::new(client)));
@@ -83,7 +89,7 @@ impl ServerClientStore {
         result
     }
 
-    fn transmit_client_close(&self, id : &Uuid) {
+    fn transmit_client_close(&self, id: &Uuid) {
         if let Some(tx) = self.close_transmitters.lock().unwrap().get(&id) {
             tx.send(()).ok();
         }

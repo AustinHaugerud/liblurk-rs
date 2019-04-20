@@ -1,4 +1,3 @@
-use rayon::{ThreadPool, ThreadPoolBuildError, ThreadPoolBuilder};
 use server::callbacks::{Callbacks, ServerCallbacks};
 use server::client_store::ClientStore;
 use server::server_access::WriteContext;
@@ -8,10 +7,9 @@ use std::sync::{atomic::AtomicUsize, mpsc::Receiver, Arc};
 use uuid::Uuid;
 
 pub struct ClientThreadPool<T>
-    where
-        T: 'static + ServerCallbacks + Send,
+where
+    T: 'static + ServerCallbacks + Send,
 {
-    pool: ThreadPool,
     client_store: ClientStore,
     write_context: WriteContext,
     callbacks: Callbacks<T>,
@@ -20,27 +18,27 @@ pub struct ClientThreadPool<T>
 }
 
 impl<T> ClientThreadPool<T>
-    where
-        T: 'static + ServerCallbacks + Send,
+where
+    T: 'static + ServerCallbacks + Send,
 {
     pub fn new(
         client_store: ClientStore,
         write_context: WriteContext,
         callbacks: Callbacks<T>,
         size: usize,
-    ) -> Result<ClientThreadPool<T>, ThreadPoolBuildError> {
-        let pool = ThreadPoolBuilder::new().num_threads(size * 2).build()?;
-        Ok(ClientThreadPool {
+    ) -> ClientThreadPool<T> {
+        ClientThreadPool {
             max_threads: size,
-            pool,
             client_store,
             write_context,
             callbacks,
             num_active: Arc::new(AtomicUsize::new(0)),
-        })
+        }
     }
 
     pub fn start_client(&mut self, id: Uuid, close_channel_rx: Receiver<()>) -> Result<(), ()> {
+        use std::thread;
+
         println!("Starting client.");
         let client = {
             self.client_store
@@ -53,7 +51,7 @@ impl<T> ClientThreadPool<T>
             let num_active = self.num_active.clone();
             let client_store = self.client_store.clone();
 
-            self.pool.spawn(move || {
+            thread::spawn(move || {
                 num_active.fetch_add(1, Relaxed);
 
                 loop {
@@ -61,13 +59,14 @@ impl<T> ClientThreadPool<T>
                         Ok(_) | Err(TryRecvError::Disconnected) => break,
 
                         Err(TryRecvError::Empty) => {
-                            let keep_open = client.lock()
-                                .expect("").update(callbacks.clone(), write_context.clone());
+                            let keep_open = client
+                                .lock()
+                                .expect("")
+                                .update(callbacks.clone(), write_context.clone());
 
                             if !keep_open {
                                 client_store.alert_close_client(&id);
                             }
-
                         }
                     }
                 }

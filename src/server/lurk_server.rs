@@ -54,8 +54,7 @@ where
             write_context.clone(),
             callbacks.clone(),
             max_connections,
-        )
-        .map_err(|_| "Failed to create thread pool.".to_string())?;
+        );
 
         Ok(Server {
             frame_time,
