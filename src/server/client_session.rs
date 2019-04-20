@@ -61,7 +61,7 @@ impl ClientSession {
         self.keep_open.load(Relaxed)
     }
 
-    pub fn update<T>(&mut self, callbacks: Callbacks<T>, write_context: WriteContext)
+    pub fn update<T>(&mut self, callbacks: Callbacks<T>, write_context: WriteContext) -> bool
     where
         T: ServerCallbacks + Send,
     {
@@ -91,6 +91,8 @@ impl ClientSession {
                 }
             }
         }
+
+        self.keep_open.load(Relaxed)
     }
 
     pub fn pull_client_message(&mut self) -> Result<Option<(LurkMessageKind, Vec<u8>)>, ()> {

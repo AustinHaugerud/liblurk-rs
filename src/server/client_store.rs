@@ -50,6 +50,13 @@ impl ServerClientStore {
         }
     }
 
+    pub fn alert_close_client(&self, id: &Uuid) {
+        if let Some(client) = self.acquire_lock().get_mut(id) {
+            self.to_close.lock().expect("alert_close_client poisoned thread").push(*id);
+            self.transmit_client_close(&id);
+        }
+    }
+
     pub fn shutdown_client(&self, id: &Uuid) {
         if let Some(client) = self.acquire_lock().get_mut(id) {
             self.transmit_client_close(&id);

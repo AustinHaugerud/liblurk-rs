@@ -8,8 +8,8 @@ use std::sync::{atomic::AtomicUsize, mpsc::Receiver, Arc};
 use uuid::Uuid;
 
 pub struct ClientThreadPool<T>
-where
-    T: 'static + ServerCallbacks + Send,
+    where
+        T: 'static + ServerCallbacks + Send,
 {
     pool: ThreadPool,
     client_store: ClientStore,
@@ -20,8 +20,8 @@ where
 }
 
 impl<T> ClientThreadPool<T>
-where
-    T: 'static + ServerCallbacks + Send,
+    where
+        T: 'static + ServerCallbacks + Send,
 {
     pub fn new(
         client_store: ClientStore,
@@ -51,6 +51,7 @@ where
             let write_context = self.write_context.clone();
             let callbacks = self.callbacks.clone();
             let num_active = self.num_active.clone();
+            let client_store = self.client_store.clone();
 
             self.pool.spawn(move || {
                 num_active.fetch_add(1, Relaxed);
@@ -59,10 +60,15 @@ where
                     match close_channel_rx.try_recv() {
                         Ok(_) | Err(TryRecvError::Disconnected) => break,
 
-                        Err(TryRecvError::Empty) => client
-                            .lock()
-                            .expect("start_client closure: update poisoned thread.")
-                            .update(callbacks.clone(), write_context.clone()),
+                        Err(TryRecvError::Empty) => {
+                            let keep_open = client.lock()
+                                .expect("").update(callbacks.clone(), write_context.clone());
+
+                            if !keep_open {
+                                client_store.alert_close_client(&id);
+                            }
+
+                        }
                     }
                 }
 
