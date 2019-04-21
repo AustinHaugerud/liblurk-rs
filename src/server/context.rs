@@ -1,6 +1,6 @@
 use server::server_access::WriteContext;
 use uuid::Uuid;
-use protocol::protocol_message::LurkMessageBlobify;
+use protocol::protocol_message::{LurkMessageBlobify, LurkMessage};
 
 pub struct ServerEventContext {
     write_context: WriteContext,
@@ -23,15 +23,15 @@ impl ServerEventContext {
         &self.client_id
     }
 
-    pub fn enqueue_message<T: 'static>(&self, message : T, target: &Uuid) where T: LurkMessageBlobify + Send {
+    pub fn enqueue_message(&self, message : LurkMessage, target: &Uuid) {
         self.write_context.enqueue_message(message, &target);
     }
 
-    pub fn enqueue_message_many<T: 'static>(&self, message: T, targets: &[&Uuid]) where T: LurkMessageBlobify + Send + Clone {
+    pub fn enqueue_message_many(&self, message: LurkMessage, targets: &[&Uuid]) {
         self.write_context.enqueue_message_many(message, targets);
     }
 
-    pub fn enqueue_message_this<T: 'static>(&self, message: T) where T: LurkMessageBlobify + Send {
+    pub fn enqueue_message_this(&self, message: LurkMessage) {
         self.write_context.enqueue_message(message, &self.client_id);
     }
 }

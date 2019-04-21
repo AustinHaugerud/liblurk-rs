@@ -5,4 +5,6 @@ authors = ["reaver"]
 
 [dependencies]
 uuid = {version = "0.6", features = ["v4"]}
-rayon = "*"
+tokio = "*"
+futures = "*"
+bytes = "*"

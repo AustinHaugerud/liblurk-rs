@@ -2,13 +2,8 @@ pub mod client;
 pub mod protocol;
 pub mod server;
 mod util;
-
-extern crate proc_macro;
-extern crate rayon;
 extern crate uuid;
+extern crate tokio;
+extern crate futures;
+extern crate bytes;
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {}
-}

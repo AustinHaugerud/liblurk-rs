@@ -25,7 +25,7 @@ pub enum LurkMessageKind {
     Message,
     ChangeRoom,
     Fight,
-    PvPFight,
+    PvpFight,
     Loot,
     Start,
     Error,
@@ -37,13 +37,30 @@ pub enum LurkMessageKind {
     Connection,
 }
 
+#[derive(Clone)]
+pub enum LurkMessage {
+    Message(Message),
+    ChangeRoom(ChangeRoom),
+    Fight(Fight),
+    PvpFight(PvpFight),
+    Loot(Loot),
+    Start(Start),
+    Error(Error),
+    Accept(Accept),
+    Room(Room),
+    Character(Character),
+    Game(Game),
+    Leave(Leave),
+    Connection(Connection),
+}
+
 impl LurkMessageKind {
     pub fn from_code(code: u8) -> Result<LurkMessageKind, ()> {
         match code {
             MESSAGE_TYPE => Ok(LurkMessageKind::Message),
             CHANGE_ROOM_TYPE => Ok(LurkMessageKind::ChangeRoom),
             FIGHT_TYPE => Ok(LurkMessageKind::Fight),
-            PVP_FIGHT_TYPE => Ok(LurkMessageKind::PvPFight),
+            PVP_FIGHT_TYPE => Ok(LurkMessageKind::PvpFight),
             LOOT_TYPE => Ok(LurkMessageKind::Loot),
             START_TYPE => Ok(LurkMessageKind::Start),
             ERROR_TYPE => Ok(LurkMessageKind::Error),
@@ -62,7 +79,7 @@ impl LurkMessageKind {
             LurkMessageKind::Message => true,
             LurkMessageKind::ChangeRoom => true,
             LurkMessageKind::Fight => true,
-            LurkMessageKind::PvPFight => true,
+            LurkMessageKind::PvpFight => true,
             LurkMessageKind::Loot => true,
             LurkMessageKind::Start => true,
             LurkMessageKind::Character => true,
@@ -194,6 +211,7 @@ impl LurkMessageType for Message {
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+#[derive(Clone, Copy)]
 pub struct ChangeRoom {
     pub room_number: u16,
 }
@@ -233,7 +251,7 @@ impl LurkMessageType for ChangeRoom {
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-#[derive(Default)]
+#[derive(Default, Clone, Copy)]
 pub struct Fight;
 
 impl Fight {
@@ -263,6 +281,7 @@ impl LurkMessageType for Fight {
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+#[derive(Default, Clone)]
 pub struct PvpFight {
     pub target: String,
 }
@@ -307,6 +326,7 @@ impl LurkMessageType for PvpFight {
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+#[derive(Clone)]
 pub struct Loot {
     pub target: String,
 }
@@ -351,7 +371,7 @@ impl LurkMessageType for Loot {
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-#[derive(Default)]
+#[derive(Default, Clone, Copy)]
 pub struct Start;
 
 impl Start {
@@ -392,6 +412,7 @@ pub const ERROR_TYPE_NO_TARGET: u8 = 6;
 pub const ERROR_TYPE_NO_FIGHT: u8 = 7;
 pub const ERROR_TYPE_NO_PVP: u8 = 8;
 
+#[derive(Clone)]
 pub struct Error {
     pub error_code: u8,
     pub error_message: String,
@@ -492,6 +513,7 @@ impl LurkMessageType for Error {
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+#[derive(Clone, Copy)]
 pub struct Accept {
     pub action_type: u8,
 }
@@ -532,6 +554,7 @@ impl LurkMessageType for Accept {
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+#[derive(Clone)]
 pub struct Room {
     pub room_number: u16,
     pub room_name: String,
@@ -750,6 +773,7 @@ impl LurkMessageType for Character {
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+#[derive(Clone)]
 pub struct Game {
     pub initial_points: u16,
     pub stat_limit: u16,
@@ -824,7 +848,7 @@ impl LurkMessageType for Game {
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-#[derive(Default)]
+#[derive(Default, Clone, Copy)]
 pub struct Leave;
 
 impl Leave {
@@ -848,6 +872,7 @@ impl LurkMessageType for Leave {
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+#[derive(Clone)]
 pub struct Connection {
     pub room_number: u16,
     pub room_name: String,
@@ -924,662 +949,3 @@ impl LurkMessageType for Connection {
     }
 }
 /////////////////////////////////////////////////////////////////////////////////////////////////
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /////////////////////////////////////////////////////////////////////////////////////////////////
-    #[test]
-    fn test_message_read() {
-        let data = vec![
-            0x05, 0x00, // MESSAGE len
-            'r' as u8, 'e' as u8, 'c' as u8, 'i' as u8, // Recipient
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            's' as u8, 'e' as u8, 'n' as u8, 'd' as u8, // Sender
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            'h' as u8, 'e' as u8, 'l' as u8, 'l' as u8, 'o' as u8, // MESSAGE
-        ];
-
-        let (message, bytes_read) = Message::parse_lurk_message(data.as_slice()).unwrap();
-
-        assert_eq!(data.len(), bytes_read);
-        assert_eq!(message.message, String::from("hello"));
-        assert_eq!(message.receiver, String::from("reci"));
-        assert_eq!(message.sender, String::from("send"));
-    }
-
-    #[test]
-    fn test_message_write() {
-        let message = Message {
-            message: String::from("mess"),
-            sender: String::from("send"),
-            receiver: String::from("reci"),
-        };
-
-        let data = message.produce_lurk_message_blob();
-
-        let expectation = [
-            Message::message_type(),
-            0x04,
-            0x00,
-            'r' as u8,
-            'e' as u8,
-            'c' as u8,
-            'i' as u8,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            's' as u8,
-            'e' as u8,
-            'n' as u8,
-            'd' as u8,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            'm' as u8,
-            'e' as u8,
-            's' as u8,
-            's' as u8,
-        ];
-
-        assert_eq!(data, expectation.to_vec());
-    }
-
-    /////////////////////////////////////////////////////////////////////////////////////////////////
-    #[test]
-    fn test_changeroom_read() {
-        let data = vec![0x08_u8, 0x00_u8];
-
-        let (change_room, bytes_read) = ChangeRoom::parse_lurk_message(data.as_slice()).unwrap();
-
-        assert_eq!(data.len(), bytes_read);
-        assert_eq!(change_room.room_number, 8);
-    }
-
-    #[test]
-    fn test_changeroom_write() {
-        let change_room = ChangeRoom { room_number: 8 };
-
-        let data = change_room.produce_lurk_message_blob();
-
-        let expectation = [ChangeRoom::message_type(), 0x08_u8, 0x00_u8];
-
-        assert_eq!(data, expectation.to_vec());
-    }
-
-    /////////////////////////////////////////////////////////////////////////////////////////////////
-    #[test]
-    fn test_fight_write() {
-        let fight = Fight {};
-
-        let expectation = [Fight::message_type()];
-
-        let blob = fight.produce_lurk_message_blob();
-
-        assert_eq!(blob, expectation.to_vec());
-    }
-
-    /////////////////////////////////////////////////////////////////////////////////////////////////
-    #[test]
-    fn test_pvpfight_read() {
-        let data = vec![
-            't' as u8, 'a' as u8, 'r' as u8, 'g' as u8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        ];
-
-        let (message, _) = PvpFight::parse_lurk_message(data.as_slice()).unwrap();
-
-        assert_eq!(message.target, String::from("targ"));
-    }
-
-    #[test]
-    fn test_pvpfight_write() {
-        let pvpfight = PvpFight {
-            target: String::from("targ"),
-        };
-
-        let data = pvpfight.produce_lurk_message_blob();
-
-        let expectation = vec![
-            PvpFight::message_type(),
-            't' as u8,
-            'a' as u8,
-            'r' as u8,
-            'g' as u8,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-        ];
-
-        assert_eq!(data, expectation.to_vec());
-    }
-
-    ////////////////////////////////////////////////////////////////////////////////////////////////
-    #[test]
-    fn test_loot_read() {
-        let data = vec![
-            'l' as u8, 'o' as u8, 'o' as u8, 't' as u8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        ];
-
-        let (message, bytes_read) = Loot::parse_lurk_message(data.as_slice()).unwrap();
-
-        assert_eq!(data.len(), bytes_read);
-        assert_eq!(message.target, String::from("loot"));
-    }
-
-    #[test]
-    fn test_loot_write() {
-        let loot = Loot {
-            target: String::from("loot"),
-        };
-
-        let data = loot.produce_lurk_message_blob();
-
-        let expectation = vec![
-            Loot::message_type(),
-            'l' as u8,
-            'o' as u8,
-            'o' as u8,
-            't' as u8,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-        ];
-
-        assert_eq!(data, expectation.to_vec());
-    }
-
-    /////////////////////////////////////////////////////////////////////////////////////////////////
-    #[test]
-    fn test_start_write() {
-        let start = Start {};
-
-        let blob = start.produce_lurk_message_blob();
-
-        assert_eq!(blob, vec![Start::message_type()]);
-    }
-
-    /////////////////////////////////////////////////////////////////////////////////////////////////
-    #[test]
-    fn test_error_read() {
-        let data = vec![0x06, 0x03, 0x00, 'c' as u8, 'a' as u8, 't' as u8];
-
-        let (error, bytes_read) = Error::parse_lurk_message(data.as_slice()).unwrap();
-
-        assert_eq!(bytes_read, data.len());
-        assert_eq!(error.error_code, 6);
-        assert_eq!(error.error_message, String::from("cat"))
-    }
-
-    #[test]
-    fn test_error_write() {
-        let error = Error {
-            error_code: 6,
-            error_message: String::from("cat"),
-        };
-
-        let blob = error.produce_lurk_message_blob();
-
-        let expectation = vec![
-            Error::message_type(),
-            0x06,
-            0x03,
-            0x00,
-            'c' as u8,
-            'a' as u8,
-            't' as u8,
-        ];
-
-        assert_eq!(blob, expectation.to_vec());
-    }
-
-    /////////////////////////////////////////////////////////////////////////////////////////////////
-    #[test]
-    fn test_accept_read() {
-        let data = vec![0x05 as u8];
-
-        let (accept, bytes_read) = Accept::parse_lurk_message(data.as_slice()).unwrap();
-
-        assert_eq!(data.len(), bytes_read);
-        assert_eq!(accept.action_type, 0x05_u8);
-    }
-
-    #[test]
-    fn test_accept_write() {
-        let accept = Accept { action_type: 5 };
-
-        let blob = accept.produce_lurk_message_blob();
-
-        let expectation = vec![Accept::message_type(), 0x05 as u8];
-
-        assert_eq!(blob, expectation.to_vec());
-    }
-
-    /////////////////////////////////////////////////////////////////////////////////////////////////
-    #[test]
-    fn test_room_read() {
-        let data = vec![
-            0x08, 0x00, 'r' as u8, 'o' as u8, 'o' as u8, 'm' as u8, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 'h' as u8, 'e' as u8,
-            'l' as u8, 'l' as u8,
-        ];
-
-        let (room, bytes_read) = Room::parse_lurk_message(data.as_slice()).unwrap();
-
-        assert_eq!(data.len(), bytes_read);
-        assert_eq!(room.room_number, 0x08_u16);
-        assert_eq!(room.room_name, String::from("room"));
-        assert_eq!(room.room_description, String::from("hell"));
-    }
-
-    #[test]
-    fn test_room_write() {
-        let room = Room {
-            room_number: 8,
-            room_name: String::from("room"),
-            room_description: String::from("hell"),
-        };
-
-        let blob = room.produce_lurk_message_blob();
-
-        let expectation = vec![
-            Room::message_type(),
-            0x08,
-            0x00,
-            'r' as u8,
-            'o' as u8,
-            'o' as u8,
-            'm' as u8,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x04,
-            0x00,
-            'h' as u8,
-            'e' as u8,
-            'l' as u8,
-            'l' as u8,
-        ];
-
-        assert_eq!(blob, expectation.to_vec());
-    }
-
-    /////////////////////////////////////////////////////////////////////////////////////////////////
-    #[test]
-    fn test_character_read() {
-        let data = vec![
-            'p' as u8, 'l' as u8, 'a' as u8, 'y' as u8, 0x00, 0x00, 0x00, 0x00, // name
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0b10101010, // flags
-            0xF0, 0x00, // attack
-            0x0F, 0x00, // def
-            0xAA, 0x00, // regen
-            0xFF, 0x00, // health
-            0xFF, 0x00, // gold
-            0x03, 0x00, // room number
-            0x04, 0x00, // description
-            'h' as u8, 'e' as u8, 'l' as u8, 'l' as u8,
-        ];
-
-        let (character, bytes_read) = Character::parse_lurk_message(data.as_slice()).unwrap();
-
-        assert_eq!(data.len(), bytes_read);
-        assert_eq!(character.player_name, String::from("play"));
-        assert_eq!(character.is_alive, true);
-        assert_eq!(character.join_battles, false);
-        assert_eq!(character.is_monster, true);
-        assert_eq!(character.is_started, false);
-        assert_eq!(character.is_ready, true);
-        assert_eq!(character.attack, 0x00_F0);
-        assert_eq!(character.defense, 0x00_0F);
-        assert_eq!(character.regeneration, 0x00_AA);
-        assert_eq!(character.health, 0x00_FF);
-        assert_eq!(character.gold, 0x00_FF);
-        assert_eq!(character.current_room_number, 0x00_03);
-        assert_eq!(character.description, String::from("hell"));
-    }
-
-    #[test]
-    fn test_character_write() {
-        let character = Character {
-            player_name: String::from("play"),
-            is_alive: true,
-            join_battles: false,
-            is_monster: true,
-            is_started: false,
-            is_ready: true,
-            attack: 0x00_F0,
-            defense: 0x00_0F,
-            regeneration: 0x00_AA,
-            health: 0x00_FF,
-            gold: 0x00_FF,
-            current_room_number: 0x00_03,
-            description: String::from("hell"),
-        };
-
-        let blob = character.produce_lurk_message_blob();
-
-        let expectation = vec![
-            Character::message_type(),
-            'p' as u8,
-            'l' as u8,
-            'a' as u8,
-            'y' as u8,
-            0x00,
-            0x00,
-            0x00,
-            0x00, // name
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0b10101000, // flags
-            0xF0,
-            0x00, // attack
-            0x0F,
-            0x00, // def
-            0xAA,
-            0x00, // regen
-            0xFF,
-            0x00, // health
-            0xFF,
-            0x00, // gold
-            0x03,
-            0x00, // room number
-            0x04,
-            0x00, // description
-            'h' as u8,
-            'e' as u8,
-            'l' as u8,
-            'l' as u8,
-        ];
-
-        assert_eq!(blob, expectation.to_vec());
-    }
-
-    /////////////////////////////////////////////////////////////////////////////////////////////////
-    #[test]
-    fn test_game_read() {
-        let data = vec![
-            0x00, 0xFF, // init points
-            0xFF, 0x00, // stat limit
-            0x04, 0x00, 'g' as u8, 'a' as u8, 'm' as u8, 'e' as u8,
-        ];
-
-        let (game, bytes_read) = Game::parse_lurk_message(data.as_slice()).unwrap();
-
-        assert_eq!(data.len(), bytes_read);
-        assert_eq!(game.initial_points, 0xFF_00);
-        assert_eq!(game.stat_limit, 0x00_FF);
-        assert_eq!(game.description, String::from("game"));
-    }
-
-    #[test]
-    fn test_game_write() {
-        let game = Game {
-            initial_points: 0xFF_00,
-            stat_limit: 0x00_FF,
-            description: String::from("game"),
-        };
-
-        let blob = game.produce_lurk_message_blob();
-
-        let expectation = vec![
-            Game::message_type(),
-            0x00,
-            0xFF, // init points
-            0xFF,
-            0x00, // stat limit
-            0x04,
-            0x00,
-            'g' as u8,
-            'a' as u8,
-            'm' as u8,
-            'e' as u8,
-        ];
-
-        assert_eq!(blob, expectation.to_vec());
-    }
-
-    /////////////////////////////////////////////////////////////////////////////////////////////////
-    #[test]
-    fn test_leave_write() {
-        let leave = Leave {};
-
-        let blob = leave.produce_lurk_message_blob();
-
-        let expectation = vec![Leave::message_type()];
-
-        assert_eq!(blob, expectation.to_vec());
-    }
-
-    /////////////////////////////////////////////////////////////////////////////////////////////////
-    #[test]
-    fn test_connection_read() {
-        let data = vec![
-            0x03, 0x00, // room number
-            'r' as u8, 'o' as u8, 'o' as u8, 'm' as u8, 0x00, 0x00, 0x00, 0x00, // name
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04,
-            0x00, // description
-            'h' as u8, 'e' as u8, 'l' as u8, 'l' as u8,
-        ];
-
-        let (connection, bytes_read) = Connection::parse_lurk_message(data.as_slice()).unwrap();
-
-        assert_eq!(data.len(), bytes_read);
-        assert_eq!(connection.room_number, 0x00_03);
-        assert_eq!(connection.room_name, String::from("room"));
-        assert_eq!(connection.room_description, String::from("hell"));
-    }
-
-    #[test]
-    fn test_connection_write() {
-        let connection = Connection {
-            room_number: 3,
-            room_name: String::from("room"),
-            room_description: String::from("hell"),
-        };
-
-        let blob = connection.produce_lurk_message_blob();
-
-        let expectation = vec![
-            Connection::message_type(),
-            0x03,
-            0x00, // room number
-            'r' as u8,
-            'o' as u8,
-            'o' as u8,
-            'm' as u8,
-            0x00,
-            0x00,
-            0x00,
-            0x00, // name
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x04,
-            0x00, // description
-            'h' as u8,
-            'e' as u8,
-            'l' as u8,
-            'l' as u8,
-        ];
-
-        assert_eq!(blob, expectation.to_vec());
-    }
-    /////////////////////////////////////////////////////////////////////////////////////////////////
-}

@@ -1,169 +1,116 @@
-use std::net::TcpListener;
-
-use std::net::SocketAddr;
-use std::time::Duration;
-
-use server::callbacks::{Callbacks, CallbacksWrapper, ServerCallbacks};
+use tokio::net::TcpListener;
+use tokio::prelude::*;
+use server::callbacks::{ServerCallbacks, CallbacksWrapper, Callbacks};
+use std::collections::HashMap;
+use uuid::Uuid;
 use server::client_session::ClientSession;
-use server::client_store::{ClientStore, ServerClientStore};
+use std::sync::mpsc::Receiver;
+use tokio::codec::Framed;
+use protocol::codec::LurkMessageCodec;
 use server::context::ServerEventContext;
-use server::server_access::{ServerAccess, WriteContext};
-use server::thread_pool::ClientThreadPool;
-use server::timing::Clock;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering::Relaxed;
-use std::sync::mpsc::channel;
+use server::server_access::{WriteContext, ServerAccess};
+use protocol::protocol_message::LurkMessage;
+use std::net::SocketAddr;
 
-pub struct Server<T>
-where
-    T: 'static + ServerCallbacks + Send,
-{
-    clients: ClientStore,
+pub struct Server<T> where T: 'static + ServerCallbacks + Send {
+    listener: TcpListener,
+    clients: HashMap<Uuid, ClientSession>,
     callbacks: Callbacks<T>,
     write_context: WriteContext,
-    running: AtomicBool,
-    thread_pool: ClientThreadPool<T>,
-    listener: TcpListener,
-    frame_time: Duration,
-    read_timeout: Duration,
 }
 
-impl<T> Server<T>
-where
-    T: 'static + ServerCallbacks + Send,
-{
-    pub fn create(
-        addr: SocketAddr,
-        timeout: Duration,
-        frame_time: Duration,
-        max_connections: usize,
-        behavior: T,
-    ) -> Result<Server<T>, String> {
-        let listener =
-            TcpListener::bind(addr).map_err(|_| format!("Failed to bind to address {}.", addr))?;
-        listener
-            .set_nonblocking(true)
-            .map_err(|_| "Failed to create non-blocking listener.".to_string())?;
+impl<T> Server<T> where T: 'static + ServerCallbacks + Send {
 
-        let clients = ServerClientStore::new();
-        let callbacks = CallbacksWrapper::new(behavior);
-        let write_context = ServerAccess::new();
-
-        let thread_pool = ClientThreadPool::new(
-            clients.clone(),
-            write_context.clone(),
-            callbacks.clone(),
-            max_connections,
-        );
-
+    pub fn new(addr: SocketAddr, behaviour: T) -> Result<Server<T>, ()> {
+        let listener = TcpListener::bind(&addr).map_err(|_| ())?;
         Ok(Server {
-            frame_time,
-            read_timeout: timeout,
             listener,
-            clients,
-            callbacks,
-            write_context,
-            running: AtomicBool::new(false),
-            thread_pool,
+            clients: HashMap::new(),
+            callbacks: CallbacksWrapper::new(behaviour),
+            write_context: ServerAccess::new(),
         })
     }
 
-    pub fn start(&mut self) {
-        self.running.store(true, Relaxed);
-        self.main();
-    }
-
-    pub fn stop(&mut self) {
-        self.running.store(false, Relaxed);
-    }
-
-    fn main(&mut self) {
-        use std::thread;
-
-        let mut clock = Clock::new();
-
+    pub fn start(&mut self, close_receiver: Receiver<()>) -> Result<(), ()> {
         loop {
-            let running = self.running.load(Relaxed);
-            if !running {
-                break;
+            if let Ok(_) = close_receiver.try_recv() {
+                return Ok(());
             }
-
-            self.accept_connections();
-
-            println!("Updating");
-            self.callbacks.update(self.write_context.clone());
-            println!("Finished updating.");
-
-            println!("Process write queue.");
-            self.process_write_queue();
-            println!("Processed write queue.");
-
-            println!("Clean client store.");
-            self.clean_client_store();
-            println!("Cleaned client store.");
-
-            let time = clock.get_elapsed();
-
-            if let Some(sleep_time) = self.frame_time.checked_sub(time) {
-                thread::sleep(sleep_time);
-            }
+            self.main()?;
         }
     }
 
-    fn accept_connections(&mut self) {
-        use std::io;
-        loop {
-            if !self.thread_pool.is_full() {
-                match self.listener.accept() {
-                    Ok((socket, _)) => {
-                        let success = socket.set_read_timeout(Some(self.read_timeout)).is_ok();
+    pub fn main(&mut self) -> Result<(), ()> {
+        self.async_accept_connections()?;
+        self.async_poll_clients()?;
+        self.async_poll_clients_writing();
+        self.process_write_queue()
+    }
 
-                        if success {
-                            let (sender, receiver) = channel();
-                            let client = ClientSession::new(socket, sender.clone());
-                            let id = *client.get_id();
-                            self.clients.add_client(client, sender);
-                            let write_context = self.write_context.clone();
-                            let context = ServerEventContext::new(write_context, id);
-                            self.thread_pool
-                                .start_client(id, receiver)
-                                .expect("Bug: Cannot add as client thread pool full.");
-                            self.callbacks.on_connect(&context);
+    fn async_accept_connections(&mut self) -> Result<(), ()> {
+        loop {
+            let poll_result = self.listener.poll_accept()
+                .map_err(|_| ())?;
+
+            if let Async::Ready((stream, _)) = poll_result {
+                let mut framed = Framed::new(stream, LurkMessageCodec);
+                let client = ClientSession::new(framed);
+                self.clients.insert(client.get_id(), client);
+            }
+            else {
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    fn async_poll_clients(&mut self) -> Result<(), ()> {
+        for (id, client) in self.clients.iter_mut() {
+            if let Ok(poll) = client.poll_message() {
+                match poll {
+                    Async::Ready(m) => {
+                        if let Some(message) = m {
+                            let context = ServerEventContext::new(self.write_context.clone(), *id);
+                            match message {
+                                LurkMessage::Message(m) => self.callbacks.on_message(&context, &m),
+                                LurkMessage::ChangeRoom(m) => self.callbacks.on_change_room(&context, &m),
+                                LurkMessage::Fight(_) => self.callbacks.on_fight(&context),
+                                LurkMessage::PvpFight(m) => self.callbacks.on_pvp_fight(&context, &m),
+                                LurkMessage::Loot(m) => self.callbacks.on_loot(&context, &m),
+                                LurkMessage::Start(_) => self.callbacks.on_start(&context),
+                                LurkMessage::Character(m) => self.callbacks.on_character(&context, &m),
+                                LurkMessage::Leave(_) => self.callbacks.on_leave(&context),
+                                _ => {},
+                            };
                         }
-                    }
-                    Err(e) => {
-                        if e.kind() == io::ErrorKind::WouldBlock {
-                            break;
-                        } else {
-                            self.running.store(false, Relaxed);
-                        }
-                    }
+                    },
+                    _ => {},
                 }
-            } else {
-                break;
+            }
+            else {
+                // TODO Handle client poll error
             }
         }
+
+        Ok(())
     }
 
-    fn process_write_queue(&mut self) {
-        while let Some(write_item) = self.write_context.write_queue.pop_message() {
-            let packet = write_item.packet.as_ref();
-            let target = write_item.target;
-
-            if self.clients.write_client(packet, &target).is_err() {
-                self.clients.flag_close_client(&write_item.target);
+    fn process_write_queue(&mut self) -> Result<(), ()> {
+        while let Some(item) = self.write_context.write_queue.pop_message() {
+            if let Some(client) = self.clients.get_mut(&item.target) {
+                client.enqueue_message(item.packet);
             }
         }
+
+        Ok(())
     }
 
-    fn clean_client_store(&mut self) {
-        let to_close = self.clients.collect_close_ids();
-
-        for id in to_close {
-            self.clients.shutdown_client(&id);
-            self.clients.remove_client(&id);
-            let context = ServerEventContext::new(self.write_context.clone(), id);
-            self.callbacks.on_disconnect(&context);
+    fn async_poll_clients_writing(&mut self) {
+        for (id, client) in self.clients.iter_mut() {
+            // TODO Handle client write error
+            if !client.poll_writing() {
+                println!("God no why!");
+            }
         }
     }
 }

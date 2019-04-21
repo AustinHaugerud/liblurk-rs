@@ -1,4 +1,4 @@
-use protocol::protocol_message::LurkMessageBlobify;
+use protocol::protocol_message::{LurkMessageBlobify, LurkMessage};
 use std::sync::{Arc, Mutex, MutexGuard};
 use uuid::Uuid;
 
@@ -8,18 +8,15 @@ pub enum Sender {
 }
 
 pub struct WriteQueueItem {
-    pub packet: Box<LurkMessageBlobify + Send>,
+    pub packet: LurkMessage,
     pub target: Uuid,
     pub sender: Sender,
 }
 
 impl WriteQueueItem {
-    pub fn new<T: 'static>(packet: T, sender: Sender, target: Uuid) -> WriteQueueItem
-    where
-        T: LurkMessageBlobify + Send,
-    {
+    pub fn new(packet: LurkMessage, sender: Sender, target: Uuid) -> WriteQueueItem {
         WriteQueueItem {
-            packet: Box::new(packet),
+            packet,
             target,
             sender,
         }
