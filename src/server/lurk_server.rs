@@ -90,11 +90,17 @@ where
 
             self.accept_connections();
 
+            println!("Updating");
             self.callbacks.update(self.write_context.clone());
+            println!("Finished updating.");
 
+            println!("Process write queue.");
             self.process_write_queue();
+            println!("Processed write queue.");
 
+            println!("Clean client store.");
             self.clean_client_store();
+            println!("Cleaned client store.");
 
             let time = clock.get_elapsed();
 
