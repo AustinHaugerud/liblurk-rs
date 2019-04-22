@@ -14,7 +14,6 @@ use tokio::timer::Interval;
 use std::time::Duration;
 use std::sync::{Arc, Mutex};
 use tokio::io::WriteHalf;
-use rayon::ThreadPoolBuilder;
 
 pub fn execute_server<T>(addr: &SocketAddr, update_freq : Duration, behaviour: T) -> Result<(), ()> where T: 'static + ServerCallbacks + Send {
     let listener = TcpListener::bind(&addr).map_err(|_| ())?;
