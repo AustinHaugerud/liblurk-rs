@@ -1,116 +1,104 @@
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 use tokio::prelude::*;
 use server::callbacks::{ServerCallbacks, CallbacksWrapper, Callbacks};
 use std::collections::HashMap;
 use uuid::Uuid;
-use server::client_session::ClientSession;
 use std::sync::mpsc::Receiver;
-use tokio::codec::Framed;
+use tokio::codec::{Framed, FramedRead, FramedWrite};
 use protocol::codec::LurkMessageCodec;
 use server::context::ServerEventContext;
 use server::server_access::{WriteContext, ServerAccess};
 use protocol::protocol_message::LurkMessage;
 use std::net::SocketAddr;
+use tokio::timer::Interval;
+use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use tokio::io::WriteHalf;
+use rayon::ThreadPoolBuilder;
 
-pub struct Server<T> where T: 'static + ServerCallbacks + Send {
-    listener: TcpListener,
-    clients: HashMap<Uuid, ClientSession>,
-    callbacks: Callbacks<T>,
-    write_context: WriteContext,
-}
+pub fn execute_server<T>(addr: &SocketAddr, update_freq : Duration, behaviour: T) -> Result<(), ()> where T: 'static + ServerCallbacks + Send {
+    let listener = TcpListener::bind(&addr).map_err(|_| ())?;
 
-impl<T> Server<T> where T: 'static + ServerCallbacks + Send {
+    let callbacks = CallbacksWrapper::new(behaviour);
+    let write_context = ServerAccess::new();
 
-    pub fn new(addr: SocketAddr, behaviour: T) -> Result<Server<T>, ()> {
-        let listener = TcpListener::bind(&addr).map_err(|_| ())?;
-        Ok(Server {
-            listener,
-            clients: HashMap::new(),
-            callbacks: CallbacksWrapper::new(behaviour),
-            write_context: ServerAccess::new(),
-        })
-    }
+    let write_halves = Arc::new(Mutex::new(HashMap::new()));
 
-    pub fn start(&mut self, close_receiver: Receiver<()>) -> Result<(), ()> {
-        loop {
-            if let Ok(_) = close_receiver.try_recv() {
-                return Ok(());
-            }
-            self.main()?;
-        }
-    }
+    let server = {
+        let write_halves = write_halves.clone();
+        let callbacks = callbacks.clone();
+        let write_context = write_context.clone();
 
-    pub fn main(&mut self) -> Result<(), ()> {
-        self.async_accept_connections()?;
-        self.async_poll_clients()?;
-        self.async_poll_clients_writing();
-        self.process_write_queue()
-    }
+        listener.incoming().for_each(move |socket| {
+            let writes = write_halves.clone();
+            let id = Uuid::new_v4();
+            let callbacks = callbacks.clone();
+            let write_context = write_context.clone();
 
-    fn async_accept_connections(&mut self) -> Result<(), ()> {
-        loop {
-            let poll_result = self.listener.poll_accept()
-                .map_err(|_| ())?;
+            let (read, write) = socket.split();
+            let (fread, fwrite) = (FramedRead::new(read, LurkMessageCodec), FramedWrite::new(write, LurkMessageCodec));
 
-            if let Async::Ready((stream, _)) = poll_result {
-                let mut framed = Framed::new(stream, LurkMessageCodec);
-                let client = ClientSession::new(framed);
-                self.clients.insert(client.get_id(), client);
-            }
-            else {
-                break;
-            }
-        }
-        Ok(())
-    }
+            writes.lock().expect("Failed to store writer.").insert(id, fwrite);
 
-    fn async_poll_clients(&mut self) -> Result<(), ()> {
-        for (id, client) in self.clients.iter_mut() {
-            if let Ok(poll) = client.poll_message() {
-                match poll {
-                    Async::Ready(m) => {
-                        if let Some(message) = m {
-                            let context = ServerEventContext::new(self.write_context.clone(), *id);
-                            match message {
-                                LurkMessage::Message(m) => self.callbacks.on_message(&context, &m),
-                                LurkMessage::ChangeRoom(m) => self.callbacks.on_change_room(&context, &m),
-                                LurkMessage::Fight(_) => self.callbacks.on_fight(&context),
-                                LurkMessage::PvpFight(m) => self.callbacks.on_pvp_fight(&context, &m),
-                                LurkMessage::Loot(m) => self.callbacks.on_loot(&context, &m),
-                                LurkMessage::Start(_) => self.callbacks.on_start(&context),
-                                LurkMessage::Character(m) => self.callbacks.on_character(&context, &m),
-                                LurkMessage::Leave(_) => self.callbacks.on_leave(&context),
-                                _ => {},
-                            };
-                        }
-                    },
+            let read_proc = fread.for_each(move |msg| {
+                let cbs = callbacks.clone();
+                let write_context = write_context.clone();
+
+                let event_context = ServerEventContext::new(write_context.clone(), id);
+
+                match msg {
+                    LurkMessage::Message(m) => cbs.on_message(&event_context, &m),
+                    LurkMessage::ChangeRoom(m) => cbs.on_change_room(&event_context, &m),
+                    LurkMessage::Fight(_) => cbs.on_fight(&event_context),
+                    LurkMessage::PvpFight(m) => cbs.on_pvp_fight(&event_context, &m),
+                    LurkMessage::Loot(m) => cbs.on_loot(&event_context, &m),
+                    LurkMessage::Start(_) => cbs.on_start(&event_context),
+                    LurkMessage::Character(m) => cbs.on_character(&event_context, &m),
+                    LurkMessage::Leave(_) => cbs.on_leave(&event_context),
                     _ => {},
                 }
-            }
-            else {
-                // TODO Handle client poll error
-            }
-        }
 
-        Ok(())
-    }
+                Ok(())
+            }).map_err(|e| eprintln!("Failed lurk read on client"));
 
-    fn process_write_queue(&mut self) -> Result<(), ()> {
-        while let Some(item) = self.write_context.write_queue.pop_message() {
-            if let Some(client) = self.clients.get_mut(&item.target) {
-                client.enqueue_message(item.packet);
+            tokio::spawn(read_proc);
+
+            Ok(())
+        }).map_err(|_| ())
+    };
+
+    let update_proc = {
+        let write_halves = write_halves.clone();
+        let callbacks = callbacks.clone();
+        let write_context = write_context.clone();
+
+        Interval::new_interval(update_freq).for_each(move |i| {
+            let write_peers = write_halves.clone();
+            let callbacks = callbacks.clone();
+            let write_context = write_context.clone();
+
+            callbacks.update(write_context.clone());
+
+            while let Some(item) = write_context.write_queue.pop_message() {
+                let mut write_peers_l = write_peers.lock().expect("Failed to lock write peers.");
+                if let Some(mut peer) = write_peers_l.remove(&item.target) {
+                    let future = peer.send(item.packet);
+                    peer = future.wait().expect("the horror");
+                    write_peers_l.insert(item.target, peer);
+                }
             }
-        }
 
-        Ok(())
-    }
+            Ok(())
+        }).map_err(|e| eprintln!("oh no"))
+    };
 
-    fn async_poll_clients_writing(&mut self) {
-        for (id, client) in self.clients.iter_mut() {
-            // TODO Handle client write error
-            if !client.poll_writing() {
-                println!("God no why!");
-            }
-        }
-    }
+    let proc = server.join(update_proc).map(|_| ());
+
+    tokio::run(proc);
+
+    Ok(())
+}
+
+fn run_client(socket: TcpStream) -> Result<(), ()> {
+    unimplemented!()
 }

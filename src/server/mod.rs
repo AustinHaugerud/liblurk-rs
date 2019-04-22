@@ -5,3 +5,4 @@ pub mod lurk_server;
 pub mod server_access;
 mod timing;
 pub mod write_queue;
+pub mod write_peer;
