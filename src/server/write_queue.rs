@@ -1,6 +1,7 @@
 use protocol::protocol_message::{LurkMessageBlobify, LurkMessage};
 use std::sync::{Arc, Mutex, MutexGuard};
 use uuid::Uuid;
+use server::server_access::WriteContext;
 
 pub enum Sender {
     Server,
@@ -59,4 +60,8 @@ impl Default for WriteQueue {
             items: Arc::new(Mutex::new(vec![])),
         }
     }
+}
+
+pub fn enqueue_write(context : WriteContext, packet: LurkMessage, target : Uuid) {
+    context.write_queue.enqueue_message(WriteQueueItem::new(packet, Sender::Server, target));
 }

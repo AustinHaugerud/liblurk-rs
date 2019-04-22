@@ -39,6 +39,8 @@ pub fn execute_server<T>(addr: &SocketAddr, update_freq : Duration, behaviour: T
 
             writes.lock().expect("Failed to store writer.").insert(id, fwrite);
 
+            callbacks.on_connect(&ServerEventContext::new(write_context.clone(), id));
+
             let read_proc = fread.for_each(move |msg| {
                 let cbs = callbacks.clone();
                 let write_context = write_context.clone();
